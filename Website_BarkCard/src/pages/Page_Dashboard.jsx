@@ -19,6 +19,14 @@ const getInitials = (name) =>
 
 const getOrderTime = (dateTime) => dateTime.split(', ').at(-1) ?? dateTime;
 
+const formatAmount = (amount) => {
+  return `₱${(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+const parseAmount = (amount) => {
+  return typeof amount === 'number' ? amount : parseFloat(String(amount).replace(/[^0-9.]/g, '')) || 0;
+};
+
 const getStatusStyle = (status) => {
   switch (status) {
     case 'Pending':
@@ -42,24 +50,23 @@ export default function Dashboard({ orders = [], menuItems = [] }) {
   const recentOrders = orders.slice(0, 4);
   const totalOrders = orders.length;
   const alertItems = menuItems
-    .filter((item) => item.stock <= 10)
-    .sort((a, b) => a.stock - b.stock);
+    .filter((item) => item.SPv_Quantity <= 10)
+    .sort((a, b) => a.SPv_Quantity - b.SPv_Quantity);
   const lowStockCount = alertItems.length;
-  const pendingOrders = orders.filter((order) => order.status === 'Pending').length;
-  const completedOrders = orders.filter((order) => order.status === 'Completed').length;
+  const pendingOrders = orders.filter((order) => order.Ov_Status === 'Pending').length;
+  const completedOrders = orders.filter((order) => order.Ov_Status === 'Completed').length;
   const completionRate = totalOrders > 0 ? Math.round((completedOrders / totalOrders) * 100) : 0;
   const topSellingItem = orders
-    .flatMap((order) => order.orderItems)
+    .flatMap((order) => order.ODv_Items)
     .reduce((totals, item) => {
-      totals[item.name] = (totals[item.name] ?? 0) + item.quantity;
+      totals[item.SPv_Name] = (totals[item.SPv_Name] ?? 0) + item.ODv_Quantity;
       return totals;
     }, {});
   const [topItemName = 'No item data', topItemOrders = 0] = Object.entries(topSellingItem).sort((left, right) => right[1] - left[1])[0] ?? [];
   const totalRevenue = orders.reduce((sum, order) => {
-    const value = parseFloat(order.total.replace(/[^0-9.]/g, ''));
-    return sum + (isNaN(value) ? 0 : value);
+    return sum + parseAmount(order.Ov_TotalAmount);
   }, 0);
-  const totalRevenueFormatted = `₱${totalRevenue.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const totalRevenueFormatted = formatAmount(totalRevenue);
 
   return (
     <div className="p-8 space-y-8">
@@ -131,7 +138,7 @@ export default function Dashboard({ orders = [], menuItems = [] }) {
           <h3 className="text-xl font-black font-headline text-primary mt-1">{topItemName}</h3>
           <div className="mt-2 text-xs text-zinc-400 font-medium">
             {topItemOrders} portion{topItemOrders === 1 ? '' : 's'} sold
-            {(() => { const m = menuItems.find((i) => i.name === topItemName); return m ? ` · ${m.stock} left` : ''; })()}
+            {(() => { const m = menuItems.find((i) => i.SPv_Name === topItemName); return m ? ` · ${m.SPv_Quantity} left` : ''; })()}
           </div>
         </div>
       </div>
@@ -158,21 +165,21 @@ export default function Dashboard({ orders = [], menuItems = [] }) {
                 </thead>
                 <tbody className="divide-y divide-surface-container-low">
                   {recentOrders.map((order, index) => (
-                    <tr key={order.id} className="hover:bg-surface-container-low transition-colors group">
+                    <tr key={order.Ov_ID} className="hover:bg-surface-container-low transition-colors group">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${avatarBackgrounds[index % avatarBackgrounds.length]}`}>
-                            {getInitials(order.student)}
+                            {getInitials(order.Uv_FullName)}
                           </div>
-                          <span className="text-sm font-semibold text-on-surface">{order.student}</span>
+                          <span className="text-sm font-semibold text-on-surface">{order.Uv_FullName}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm font-mono text-zinc-500">{order.id}</td>
-                      <td className="px-6 py-4 text-sm text-zinc-600">{order.items}</td>
-                      <td className="px-6 py-4 text-sm font-bold text-on-surface">{order.total}</td>
+                      <td className="px-6 py-4 text-sm font-mono text-zinc-500">{order.Ov_ID}</td>
+                      <td className="px-6 py-4 text-sm text-zinc-600">{order.ODv_Items.map((item) => item.SPv_Name).join(', ')}</td>
+                      <td className="px-6 py-4 text-sm font-bold text-on-surface">{formatAmount(order.Ov_TotalAmount)}</td>
                       <td className="px-6 py-4">
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${getStatusStyle(order.status)}`}>
-                          {order.status}
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${getStatusStyle(order.Ov_Status)}`}>
+                          {order.Ov_Status}
                         </span>
                       </td>
                     </tr>
@@ -196,12 +203,12 @@ export default function Dashboard({ orders = [], menuItems = [] }) {
                 <p className="text-sm text-zinc-400">All menu items are well stocked.</p>
               ) : (
                 alertItems.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between">
+                  <div key={item.SPv_ID} className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-semibold text-on-surface">{item.name}</p>
-                      <p className="text-xs text-zinc-400">{item.stock === 0 ? 'Out of Stock' : `${item.stock} units left`}</p>
+                      <p className="text-sm font-semibold text-on-surface">{item.SPv_Name}</p>
+                      <p className="text-xs text-zinc-400">{item.SPv_Quantity === 0 ? 'Out of Stock' : `${item.SPv_Quantity} units left`}</p>
                     </div>
-                    {item.stock === 0
+                    {item.SPv_Quantity === 0
                       ? <button className="text-xs font-bold text-error hover:underline">Urgent</button>
                       : <button className="text-xs font-bold text-primary hover:underline">Reorder</button>
                     }
@@ -274,15 +281,15 @@ export default function Dashboard({ orders = [], menuItems = [] }) {
                   </thead>
                   <tbody className="divide-y divide-surface-container-low">
                     {orders.map((order) => (
-                      <tr key={order.id} className="hover:bg-surface-container-low transition-colors group">
-                        <td className="px-6 py-4 text-sm text-zinc-500">{getOrderTime(order.dateTime)}</td>
-                        <td className="px-6 py-4 text-sm font-semibold text-on-surface">{order.student}</td>
-                        <td className="px-6 py-4 text-sm font-mono text-zinc-500">{order.id}</td>
-                        <td className="px-6 py-4 text-sm text-zinc-600">{order.items}</td>
-                        <td className="px-6 py-4 text-sm font-bold text-on-surface">{order.total}</td>
+                      <tr key={order.Ov_ID} className="hover:bg-surface-container-low transition-colors group">
+                        <td className="px-6 py-4 text-sm text-zinc-500">{getOrderTime(order.Ov_CreatedAt)}</td>
+                        <td className="px-6 py-4 text-sm font-semibold text-on-surface">{order.Uv_FullName}</td>
+                        <td className="px-6 py-4 text-sm font-mono text-zinc-500">{order.Ov_ID}</td>
+                        <td className="px-6 py-4 text-sm text-zinc-600">{order.ODv_Items.map((item) => item.SPv_Name).join(', ')}</td>
+                        <td className="px-6 py-4 text-sm font-bold text-on-surface">{formatAmount(order.Ov_TotalAmount)}</td>
                         <td className="px-6 py-4">
-                          <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${getStatusStyle(order.status)}`}>
-                            {order.status}
+                          <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${getStatusStyle(order.Ov_Status)}`}>
+                            {order.Ov_Status}
                           </span>
                         </td>
                       </tr>

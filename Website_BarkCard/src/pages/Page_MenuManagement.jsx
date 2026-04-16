@@ -4,12 +4,12 @@ import { useOutletContext } from 'react-router-dom';
 const categoryOptions = ['All Categories', 'Main Course', 'Beverages'];
 
 const defaultFormData = {
-  name: '',
-  description: '',
-  category: 'Main Course',
-  price: '',
-  stock: '',
-  imageUrl: ''
+  SPv_Name: '',
+  SPv_Description: '',
+  SPv_Category: 'Main Course',
+  SPv_Price: '',
+  SPv_Quantity: '',
+  SPv_IMG: ''
 };
 
 const getStockMeta = (stock) => {
@@ -63,10 +63,10 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
   const [dragActive, setDragActive] = useState(false);
 
   const filteredItems = menuItems.filter((item) => {
-    const categoryMatch = activeCategory === 'All Categories' || item.category === activeCategory;
+    const categoryMatch = activeCategory === 'All Categories' || item.SPv_Category === activeCategory;
     const normalizedLocalQuery = searchTerm.trim().toLowerCase();
     const normalizedGlobalQuery = globalSearchTerm.trim().toLowerCase();
-    const searchTarget = `${item.name} ${item.description} ${item.category}`.toLowerCase();
+    const searchTarget = `${item.SPv_Name} ${item.SPv_Description} ${item.SPv_Category}`.toLowerCase();
     const localMatch =
       normalizedLocalQuery.length === 0 ||
       searchTarget.includes(normalizedLocalQuery);
@@ -78,8 +78,8 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
   });
 
   const totalItems = menuItems.length;
-  const lowInventoryCount = menuItems.filter((item) => item.stock > 0 && item.stock <= 10).length;
-  const outOfStockCount = menuItems.filter((item) => item.stock === 0).length;
+  const lowInventoryCount = menuItems.filter((item) => item.SPv_Quantity > 0 && item.SPv_Quantity <= 10).length;
+  const outOfStockCount = menuItems.filter((item) => item.SPv_Quantity === 0).length;
 
   const closeModal = () => {
     setIsModalOpen(false);
@@ -108,7 +108,7 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
 
-    if (name === 'imageUrl') {
+    if (name === 'SPv_IMG') {
       setImageFile(null);
       updatePreviewFromUrl(value);
     }
@@ -124,7 +124,7 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
     setImageFile(file);
     setFormData(prev => ({
       ...prev,
-      imageUrl: ''
+      SPv_IMG: ''
     }));
 
     const reader = new FileReader();
@@ -157,22 +157,22 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
 
   const handleResetImage = () => {
     setImageFile(null);
-    setFormData(prev => ({ ...prev, imageUrl: '' }));
+    setFormData(prev => ({ ...prev, SPv_IMG: '' }));
     setImagePreview(defaultPreview);
   };
 
   const handleEditItem = (item) => {
-    setEditingItemId(item.id);
+    setEditingItemId(item.SPv_ID);
     setFormData({
-      name: item.name,
-      description: item.description,
-      category: item.category,
-      price: String(item.price),
-      stock: String(item.stock),
-      imageUrl: item.imageUrl
+      SPv_Name: item.SPv_Name,
+      SPv_Description: item.SPv_Description,
+      SPv_Category: item.SPv_Category,
+      SPv_Price: String(item.SPv_Price),
+      SPv_Quantity: String(item.SPv_Quantity),
+      SPv_IMG: item.SPv_IMG
     });
     setImageFile(null);
-    setImagePreview(item.imageUrl || defaultPreview);
+    setImagePreview(item.SPv_IMG || defaultPreview);
     setIsModalOpen(true);
   };
 
@@ -183,7 +183,7 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
   const confirmDeleteItem = () => {
     if (!itemPendingDelete) return;
 
-    setMenuItems((prev) => prev.filter((item) => item.id !== itemPendingDelete.id));
+    setMenuItems((prev) => prev.filter((item) => item.SPv_ID !== itemPendingDelete.SPv_ID));
     setItemPendingDelete(null);
   };
 
@@ -194,24 +194,26 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    const normalizedName = formData.name.trim();
-    const normalizedDescription = formData.description.trim();
-    const normalizedPrice = Number.parseFloat(formData.price);
-    const normalizedStock = Number.parseInt(formData.stock, 10);
-    const normalizedImageUrl = formData.imageUrl.trim() || imagePreview;
+    const normalizedName = formData.SPv_Name.trim();
+    const normalizedDescription = formData.SPv_Description.trim();
+    const normalizedPrice = Number.parseFloat(formData.SPv_Price);
+    const normalizedQuantity = Number.parseInt(formData.SPv_Quantity, 10);
+    const normalizedImageUrl = formData.SPv_IMG.trim() || imagePreview;
 
     const nextItem = {
-      id: editingItemId || `${normalizedName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now()}`,
-      name: normalizedName,
-      description: normalizedDescription,
-      category: formData.category,
-      price: Number.isFinite(normalizedPrice) ? normalizedPrice : 0,
-      stock: Number.isFinite(normalizedStock) ? normalizedStock : 0,
-      imageUrl: normalizedImageUrl
+      SPv_ID: editingItemId || `PROD-${Date.now()}`,
+      CSv_ID: 1,
+      SPv_RefNum: editingItemId ? formData.SPv_RefNum || `REF-${Date.now()}` : `REF-${Date.now()}`,
+      SPv_Name: normalizedName,
+      SPv_Description: normalizedDescription,
+      SPv_Category: formData.SPv_Category,
+      SPv_Price: Number.isFinite(normalizedPrice) ? normalizedPrice : 0,
+      SPv_Quantity: Number.isFinite(normalizedQuantity) ? normalizedQuantity : 0,
+      SPv_IMG: normalizedImageUrl
     };
 
     if (editingItemId) {
-      setMenuItems((prev) => prev.map((item) => (item.id === editingItemId ? nextItem : item)));
+      setMenuItems((prev) => prev.map((item) => (item.SPv_ID === editingItemId ? nextItem : item)));
     } else {
       setMenuItems((prev) => [nextItem, ...prev]);
     }
@@ -245,8 +247,8 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
                 <label className="block text-sm font-semibold text-on-surface font-label">Item Name</label>
                 <input
                   type="text"
-                  name="name"
-                  value={formData.name}
+                  name="SPv_Name"
+                  value={formData.SPv_Name}
                   onChange={handleInputChange}
                   placeholder="e.g., Grilled Chicken Sandwich"
                   className="w-full px-4 py-3 bg-surface-container border-none rounded-lg focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all text-on-surface placeholder:text-outline"
@@ -258,8 +260,8 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
               <div className="space-y-2">
                 <label className="block text-sm font-semibold text-on-surface font-label">Description</label>
                 <textarea
-                  name="description"
-                  value={formData.description}
+                  name="SPv_Description"
+                  value={formData.SPv_Description}
                   onChange={handleInputChange}
                   placeholder="Brief description of the item"
                   rows="3"
@@ -272,8 +274,8 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
               <div className="space-y-2">
                 <label className="block text-sm font-semibold text-on-surface font-label">Category</label>
                 <select
-                  name="category"
-                  value={formData.category}
+                  name="SPv_Category"
+                  value={formData.SPv_Category}
                   onChange={handleInputChange}
                   className="w-full px-4 py-3 bg-surface-container border-none rounded-lg focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all text-on-surface"
                 >
@@ -290,8 +292,8 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
                 <label className="block text-sm font-semibold text-on-surface font-label">Price (₱)</label>
                 <input
                   type="number"
-                  name="price"
-                  value={formData.price}
+                  name="SPv_Price"
+                  value={formData.SPv_Price}
                   onChange={handleInputChange}
                   placeholder="0.00"
                   step="0.01"
@@ -306,8 +308,8 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
                 <label className="block text-sm font-semibold text-on-surface font-label">Initial Stock</label>
                 <input
                   type="number"
-                  name="stock"
-                  value={formData.stock}
+                  name="SPv_Quantity"
+                  value={formData.SPv_Quantity}
                   onChange={handleInputChange}
                   placeholder="0"
                   min="0"
@@ -336,8 +338,8 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
                 >
                   <input
                     type="url"
-                    name="imageUrl"
-                    value={formData.imageUrl}
+                    name="SPv_IMG"
+                    value={formData.SPv_IMG}
                     onChange={handleInputChange}
                     placeholder="https://example.com/image.jpg"
                     className="w-full px-4 py-3 bg-surface-container border-none rounded-lg focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all text-on-surface placeholder:text-outline"
@@ -399,7 +401,7 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
               </div>
             </div>
             <p className="text-sm text-on-surface">
-              Are you sure you want to delete <span className="font-semibold">{itemPendingDelete.name}</span> from the menu?
+              Are you sure you want to delete <span className="font-semibold">{itemPendingDelete.SPv_Name}</span> from the menu?
             </p>
             <div className="flex gap-3 pt-1">
               <button
@@ -477,29 +479,29 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
           </thead>
           <tbody className="divide-y divide-transparent">
             {filteredItems.map((item) => {
-              const stockMeta = getStockMeta(item.stock);
+              const stockMeta = getStockMeta(item.SPv_Quantity);
 
               return (
-                <tr key={item.id} className="group hover:bg-surface-container-low transition-colors">
+                <tr key={item.SPv_ID} className="group hover:bg-surface-container-low transition-colors">
                   <td className="px-8 py-6">
                     <div className="flex items-center gap-4">
                       <div className={`w-12 h-12 rounded-lg bg-secondary-container flex items-center justify-center overflow-hidden ${stockMeta.imageClass}`}>
-                        <img className="w-full h-full object-cover" src={item.imageUrl} alt={item.name} />
+                        <img className="w-full h-full object-cover" src={item.SPv_IMG} alt={item.SPv_Name} />
                       </div>
                       <div>
-                        <p className={`font-headline font-bold text-on-surface ${stockMeta.nameClass}`}>{item.name}</p>
-                        <p className="text-xs text-outline font-body">{item.description}</p>
+                        <p className={`font-headline font-bold text-on-surface ${stockMeta.nameClass}`}>{item.SPv_Name}</p>
+                        <p className="text-xs text-outline font-body">{item.SPv_Description}</p>
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-6 font-body text-sm text-secondary">{item.category}</td>
-                  <td className="px-6 py-6 font-headline font-bold text-sm text-right text-on-surface">{formatPrice(item.price)}</td>
+                  <td className="px-6 py-6 font-body text-sm text-secondary">{item.SPv_Category}</td>
+                  <td className="px-6 py-6 font-headline font-bold text-sm text-right text-on-surface">{formatPrice(item.SPv_Price)}</td>
                   <td className="px-6 py-6 text-center">
-                    <div className={`text-sm font-bold ${stockMeta.stockTextClass}`}>{item.stock}</div>
+                    <div className={`text-sm font-bold ${stockMeta.stockTextClass}`}>{item.SPv_Quantity}</div>
                     <div className="w-16 h-1.5 bg-surface-container-highest rounded-full mx-auto mt-2 overflow-hidden">
                       <div
                         className={`h-full ${stockMeta.barClass} rounded-full`}
-                        style={{ width: getStockBarWidth(item.stock) }}
+                        style={{ width: getStockBarWidth(item.SPv_Quantity) }}
                       ></div>
                     </div>
                   </td>

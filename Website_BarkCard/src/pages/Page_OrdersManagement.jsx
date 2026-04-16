@@ -9,6 +9,19 @@ export default function OrdersManagement({ orders, setOrders }) {
   const [currentPage, setCurrentPage] = useState(1);
   const ordersPerPage = 8;
 
+  // Helper functions
+  const getOrderItemsString = (items) => {
+    return items?.map(item => item.SPv_Name).join(', ') || '';
+  };
+
+  const formatAmount = (amount) => {
+    return `₱${(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  const parseAmount = (amount) => {
+    return typeof amount === 'number' ? amount : parseFloat(String(amount).replace(/[^0-9.]/g, '')) || 0;
+  };
+
   const normalizedGlobalQuery = globalSearchTerm.trim().toLowerCase();
   const searchFilteredOrders = orders.filter((order) => {
     if (!normalizedGlobalQuery) {
@@ -16,15 +29,15 @@ export default function OrdersManagement({ orders, setOrders }) {
     }
 
     const searchableText = [
-      order.student,
-      order.id,
-      order.items,
-      order.status,
-      order.dateTime,
-      order.studentId,
-      order.email,
-      order.paymentMethod,
-      order.total
+      order.Uv_FullName,
+      order.Ov_ID,
+      getOrderItemsString(order.ODv_Items),
+      order.Ov_Status,
+      order.Ov_CreatedAt,
+      order.Uv_ID,
+      order.Uv_Email,
+      order.WTv_Type,
+      order.Ov_TotalAmount
     ]
       .join(' ')
       .toLowerCase();
@@ -32,30 +45,25 @@ export default function OrdersManagement({ orders, setOrders }) {
     return searchableText.includes(normalizedGlobalQuery);
   });
 
-  const pendingOrders = orders.filter((order) => order.status === 'Pending');
-  const preparingOrders = orders.filter((order) => order.status === 'Preparing');
-  const readyOrders = orders.filter((order) => order.status === 'Ready');
-  const completedOrders = orders.filter((order) => order.status === 'Completed');
-  const activeOrders = orders.filter((order) => order.status !== 'Cancelled');
+  const pendingOrders = orders.filter((order) => order.Ov_Status === 'Pending');
+  const preparingOrders = orders.filter((order) => order.Ov_Status === 'Preparing');
+  const readyOrders = orders.filter((order) => order.Ov_Status === 'Ready');
+  const completedOrders = orders.filter((order) => order.Ov_Status === 'Completed');
+  const activeOrders = orders.filter((order) => order.Ov_Status !== 'Cancelled');
   const queueOrdersCount = pendingOrders.length + preparingOrders.length;
   const kitchenLoad = activeOrders.length > 0 ? Math.round((queueOrdersCount / activeOrders.length) * 100) : 0;
 
-  const parseAmount = (price) => {
-    const value = parseFloat(String(price).replace(/[^0-9.]/g, ''));
-    return Number.isNaN(value) ? 0 : value;
-  };
-
-  const completedRevenue = completedOrders.reduce((sum, order) => sum + parseAmount(order.total), 0);
+  const completedRevenue = completedOrders.reduce((sum, order) => sum + parseAmount(order.Ov_TotalAmount), 0);
   const queuedRevenue = pendingOrders
     .concat(preparingOrders)
-    .reduce((sum, order) => sum + parseAmount(order.total), 0);
-  const formattedCompletedRevenue = `₱${completedRevenue.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const formattedQueuedRevenue = `₱${queuedRevenue.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    .reduce((sum, order) => sum + parseAmount(order.Ov_TotalAmount), 0);
+  const formattedCompletedRevenue = formatAmount(completedRevenue);
+  const formattedQueuedRevenue = formatAmount(queuedRevenue);
 
   const filteredOrders =
     selectedStatus === 'All Orders'
       ? searchFilteredOrders
-      : searchFilteredOrders.filter((order) => order.status === selectedStatus);
+      : searchFilteredOrders.filter((order) => order.Ov_Status === selectedStatus);
   
   // Pagination logic
   const totalPages = Math.ceil(filteredOrders.length / ordersPerPage);
@@ -74,12 +82,12 @@ export default function OrdersManagement({ orders, setOrders }) {
   const handleStatusChange = (orderId, newStatus) => {
     setOrders(prevOrders => 
       prevOrders.map(order => 
-        order.id === orderId ? { ...order, status: newStatus } : order
+        order.Ov_ID === orderId ? { ...order, Ov_Status: newStatus } : order
       )
     );
     // Update selectedOrder if it's the one being changed
-    if (selectedOrder && selectedOrder.id === orderId) {
-      setSelectedOrder(prev => ({ ...prev, status: newStatus }));
+    if (selectedOrder && selectedOrder.Ov_ID === orderId) {
+      setSelectedOrder(prev => ({ ...prev, Ov_Status: newStatus }));
     }
   };
 
@@ -187,20 +195,20 @@ export default function OrdersManagement({ orders, setOrders }) {
           </thead>
           <tbody className="divide-y divide-transparent">
             {paginatedOrders.map((order) => (
-              <tr key={order.id} className="hover:bg-surface-container-low transition-colors duration-200">
+              <tr key={order.Ov_ID} className="hover:bg-surface-container-low transition-colors duration-200">
                 <td className="px-6 py-6">
                   <div className="flex items-center gap-3">
-                    <img className="w-8 h-8 rounded-full" src={order.image} alt="Student" />
-                    <span className="font-medium text-on-surface">{order.student}</span>
+                    <img className="w-8 h-8 rounded-full" src={order.Uv_Image} alt="Student" />
+                    <span className="font-medium text-on-surface">{order.Uv_FullName}</span>
                   </div>
                 </td>
-                <td className="px-6 py-6 text-sm text-secondary font-mono">{order.id}</td>
-                <td className="px-6 py-6 text-sm text-on-surface-variant">{order.items}</td>
-                <td className="px-6 py-6 text-sm font-bold text-primary">{order.total}</td>
-                <td className="px-6 py-6 text-sm text-secondary">{order.dateTime}</td>
+                <td className="px-6 py-6 text-sm text-secondary font-mono">{order.Ov_ID}</td>
+                <td className="px-6 py-6 text-sm text-on-surface-variant">{getOrderItemsString(order.ODv_Items)}</td>
+                <td className="px-6 py-6 text-sm font-bold text-primary">{formatAmount(order.Ov_TotalAmount)}</td>
+                <td className="px-6 py-6 text-sm text-secondary">{order.Ov_CreatedAt}</td>
                 <td className="px-6 py-6">
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${getStatusStyle(order.status)}`}>
-                    {order.status.toUpperCase()}
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${getStatusStyle(order.Ov_Status)}`}>
+                    {order.Ov_Status.toUpperCase()}
                   </span>
                 </td>
                 <td className="px-6 py-6 text-right">
@@ -305,7 +313,7 @@ export default function OrdersManagement({ orders, setOrders }) {
             <div className="sticky top-0 z-10 bg-surface-container-lowest border-b border-surface-container p-6 flex items-center justify-between">
               <div>
                 <h3 className="text-2xl font-black font-headline text-on-surface">Order Details</h3>
-                <p className="text-sm text-secondary">Order {selectedOrder.id}</p>
+                <p className="text-sm text-secondary">Order {selectedOrder.Ov_ID}</p>
               </div>
               <button
                 onClick={() => setIsDetailsModalOpen(false)}
@@ -322,20 +330,20 @@ export default function OrdersManagement({ orders, setOrders }) {
                   Student Information
                 </h4>
                 <div className="flex items-center gap-4 mb-3">
-                  <img className="w-12 h-12 rounded-full" src={selectedOrder.image} alt="Student" />
+                  <img className="w-12 h-12 rounded-full" src={selectedOrder.Uv_Image} alt="Student" />
                   <div>
-                    <p className="font-semibold text-on-surface">{selectedOrder.student}</p>
-                    <p className="text-sm text-secondary">{selectedOrder.studentId}</p>
+                    <p className="font-semibold text-on-surface">{selectedOrder.Uv_FullName}</p>
+                    <p className="text-sm text-secondary">{selectedOrder.Uv_ID}</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                   <div>
                     <span className="text-secondary">Email:</span>
-                    <p className="text-on-surface">{selectedOrder.email}</p>
+                    <p className="text-on-surface">{selectedOrder.Uv_Email}</p>
                   </div>
                   <div>
                     <span className="text-secondary">Phone:</span>
-                    <p className="text-on-surface">{selectedOrder.phone}</p>
+                    <p className="text-on-surface">{selectedOrder.Uv_Phone}</p>
                   </div>
                 </div>
               </div>
@@ -347,18 +355,18 @@ export default function OrdersManagement({ orders, setOrders }) {
                   Order Items
                 </h4>
                 <div className="space-y-3">
-                  {selectedOrder.orderItems.map((item, index) => (
+                  {selectedOrder.ODv_Items.map((item, index) => (
                     <div key={index} className="flex justify-between items-center py-2 border-b border-surface-container last:border-b-0">
                       <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium text-on-surface">{item.name}</span>
-                        <span className="text-xs text-secondary">×{item.quantity}</span>
+                        <span className="text-sm font-medium text-on-surface">{item.SPv_Name}</span>
+                        <span className="text-xs text-secondary">×{item.ODv_Quantity}</span>
                       </div>
-                      <span className="text-sm font-semibold text-primary">{item.price}</span>
+                      <span className="text-sm font-semibold text-primary">{formatAmount(item.ODv_Subtotal)}</span>
                     </div>
                   ))}
                   <div className="flex justify-between items-center pt-3 border-t border-surface-container">
                     <span className="font-bold text-on-surface">Total</span>
-                    <span className="font-bold text-primary text-lg">{selectedOrder.total}</span>
+                    <span className="font-bold text-primary text-lg">{formatAmount(selectedOrder.Ov_TotalAmount)}</span>
                   </div>
                 </div>
               </div>
@@ -372,18 +380,18 @@ export default function OrdersManagement({ orders, setOrders }) {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="text-secondary">Order Date/Time:</span>
-                    <p className="text-on-surface">{selectedOrder.dateTime}</p>
+                    <p className="text-on-surface">{selectedOrder.Ov_CreatedAt}</p>
                   </div>
                   <div>
                     <span className="text-secondary">Payment Method:</span>
-                    <p className="text-on-surface">{selectedOrder.paymentMethod}</p>
+                    <p className="text-on-surface">{selectedOrder.WTv_Type}</p>
                   </div>
                   <div>
                     <span className="text-secondary">Status:</span>
                     <select
-                      value={selectedOrder.status}
-                      onChange={(e) => handleStatusChange(selectedOrder.id, e.target.value)}
-                      className={`mt-1 block w-full px-3 py-2 border border-outline-variant rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary text-sm font-bold ${getStatusStyle(selectedOrder.status)}`}
+                      value={selectedOrder.Ov_Status}
+                      onChange={(e) => handleStatusChange(selectedOrder.Ov_ID, e.target.value)}
+                      className={`mt-1 block w-full px-3 py-2 border border-outline-variant rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary text-sm font-bold ${getStatusStyle(selectedOrder.Ov_Status)}`}
                     >
                       <option value="Pending">Pending</option>
                       <option value="Preparing">Preparing</option>
@@ -394,7 +402,7 @@ export default function OrdersManagement({ orders, setOrders }) {
                   </div>
                   <div>
                     <span className="text-secondary">Special Instructions:</span>
-                    <p className="text-on-surface">{selectedOrder.specialInstructions || 'None'}</p>
+                    <p className="text-on-surface">{selectedOrder.Ov_SpecialInstructions || 'None'}</p>
                   </div>
                 </div>
               </div>
