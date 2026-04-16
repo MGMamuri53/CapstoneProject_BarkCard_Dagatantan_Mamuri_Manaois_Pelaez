@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
-import Dashboard from './pages/Dashboard';
-import OrdersManagement from './pages/OrdersManagement';
-import MenuManagement from './pages/MenuManagement';
-import AnalyticsStatistics from './pages/AnalyticsStatistics';
-import AdminLogin from './pages/AdminLogin';
+import Dashboard from './pages/Page_Dashboard';
+import OrdersManagement from './pages/Page_OrdersManagement';
+import MenuManagement from './pages/Page_MenuManagement';
+import AnalyticsStatistics from './pages/Page_AnalyticsStatistics';
+import AdminLogin from './pages/Page_AdminLogin';
 import { initialOrders } from './data/orders';
 import { initialMenuItems } from './data/menuItems';
 
