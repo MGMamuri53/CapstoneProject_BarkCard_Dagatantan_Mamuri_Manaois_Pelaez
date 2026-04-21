@@ -6,7 +6,8 @@ import OrdersManagement from './pages/StorePages/Page_OrdersManagement';
 import MenuManagement from './pages/StorePages/Page_MenuManagement';
 import AnalyticsStatistics from './pages/StorePages/Page_AnalyticsStatistics';
 import AdminLogin from './pages/StorePages/Page_AdminLogin';
-import SuperAdmin from './pages/SuperAdminPages/Page_SuperAdmin';
+import SuperAdminDashboard from './pages/SuperAdminPages/Page_SuperAdminDashboard';
+import UserManagement from './pages/SuperAdminPages/Page_SuperAdminUserManagement';
 import { initialOrders } from './data/orders';
 import { initialMenuItems } from './data/menuItems';
 import { useAuth } from './hooks/useAuth';
@@ -76,7 +77,15 @@ function App() {
           path="/superadmin"
           element={(
             <RequireSuperAdmin>
-              <SuperAdmin />
+              <SuperAdminDashboard />
+            </RequireSuperAdmin>
+          )}
+        />
+        <Route
+          path="/superadmin/users"
+          element={(
+            <RequireSuperAdmin>
+              <UserManagement />
             </RequireSuperAdmin>
           )}
         />
