@@ -1,4 +1,4 @@
-// Orders mapped to tbl_Order and tbl_OrderDetails schema
+// Orders mapped to tbl_order and tbl_orderdetails schema
 export const initialOrders = [
   {
     Ov_ID: 1,

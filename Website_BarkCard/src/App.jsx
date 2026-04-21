@@ -1,28 +1,119 @@
 import { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
-import Dashboard from './pages/Page_Dashboard';
-import OrdersManagement from './pages/Page_OrdersManagement';
-import MenuManagement from './pages/Page_MenuManagement';
-import AnalyticsStatistics from './pages/Page_AnalyticsStatistics';
-import AdminLogin from './pages/Page_AdminLogin';
+import Dashboard from './pages/StorePages/Page_Dashboard';
+import OrdersManagement from './pages/StorePages/Page_OrdersManagement';
+import MenuManagement from './pages/StorePages/Page_MenuManagement';
+import AnalyticsStatistics from './pages/StorePages/Page_AnalyticsStatistics';
+import AdminLogin from './pages/StorePages/Page_AdminLogin';
+import SuperAdmin from './pages/SuperAdminPages/Page_SuperAdmin';
 import { initialOrders } from './data/orders';
 import { initialMenuItems } from './data/menuItems';
+import { useAuth } from './hooks/useAuth';
+
+const isSuperAdminRole = (role) => {
+  const normalizedRole = String(role || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+  return normalizedRole === 'superadmin' || normalizedRole === 'superadministrator';
+};
+
+function ProtectLoginPage({ children }) {
+  const { user } = useAuth();
+  
+  // If already logged in, redirect to appropriate dashboard
+  if (user && user.role) {
+    if (isSuperAdminRole(user.role)) {
+      return <Navigate to="/superadmin" replace />;
+    }
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // Allow access to login page if not authenticated
+  return children;
+}
+
+function RequireStoreAccess({ children }) {
+  const { user } = useAuth();
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (isSuperAdminRole(user?.role)) {
+    return <Navigate to="/superadmin" replace />;
+  }
+
+  return children;
+}
+
+function RequireSuperAdmin({ children }) {
+  const { user } = useAuth();
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!isSuperAdminRole(user?.role)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return children;
+}
 
 function App() {
-  const [orders, setOrders] = useState(initialOrders);
+  const [orders] = useState(initialOrders);
   const [menuItems, setMenuItems] = useState(initialMenuItems);
 
   return (
-    <Router>
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
-        <Route path="/login" element={<AdminLogin />} />
+        <Route
+          path="/login"
+          element={(
+            <ProtectLoginPage>
+              <AdminLogin />
+            </ProtectLoginPage>
+          )}
+        />
+        <Route
+          path="/superadmin"
+          element={(
+            <RequireSuperAdmin>
+              <SuperAdmin />
+            </RequireSuperAdmin>
+          )}
+        />
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/login" replace />} />
-          <Route path="dashboard" element={<Dashboard orders={orders} menuItems={menuItems} />} />
-          <Route path="orders" element={<OrdersManagement orders={orders} setOrders={setOrders} />} />
-          <Route path="menu" element={<MenuManagement menuItems={menuItems} setMenuItems={setMenuItems} />} />
-          <Route path="analytics" element={<AnalyticsStatistics orders={orders} menuItems={menuItems} />} />
+          <Route
+            path="dashboard"
+            element={(
+              <RequireStoreAccess>
+                <Dashboard orders={orders} menuItems={menuItems} />
+              </RequireStoreAccess>
+            )}
+          />
+          <Route
+            path="orders"
+            element={(
+              <RequireStoreAccess>
+                <OrdersManagement />
+              </RequireStoreAccess>
+            )}
+          />
+          <Route
+            path="menu"
+            element={(
+              <RequireStoreAccess>
+                <MenuManagement menuItems={menuItems} setMenuItems={setMenuItems} />
+              </RequireStoreAccess>
+            )}
+          />
+          <Route
+            path="analytics"
+            element={(
+              <RequireStoreAccess>
+                <AnalyticsStatistics orders={orders} menuItems={menuItems} />
+              </RequireStoreAccess>
+            )}
+          />
         </Route>
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

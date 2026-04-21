@@ -7,11 +7,13 @@ export default function Layout() {
   const [globalSearchTerm, setGlobalSearchTerm] = useState('');
 
   return (
-    <div className="min-h-screen">
+    <div className="d-flex min-vh-100">
       <Sidebar />
-      <main className="ml-64 min-h-screen">
+      <main className="flex-grow-1 d-flex flex-column" style={{ marginLeft: '256px' }}>
         <Header onSearchChange={setGlobalSearchTerm} searchTerm={globalSearchTerm} />
-        <Outlet context={{ globalSearchTerm }} />
+        <div className="flex-grow-1">
+          <Outlet context={{ globalSearchTerm }} />
+        </div>
       </main>
     </div>
   );

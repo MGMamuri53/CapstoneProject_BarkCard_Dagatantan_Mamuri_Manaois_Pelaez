@@ -1,57 +1,39 @@
-@import "tailwindcss";
+/* Bootstrap is imported from CDN in index.html */
 
-@theme {
-  --color-on-surface: #1f2937;
-  --color-tertiary-fixed-dim: #d8ba78;
-  --color-inverse-surface: #223047;
-  --color-on-primary-fixed-variant: #18335e;
-  --color-on-tertiary-container: #5f4814;
-  --color-surface-container-highest: #ddd9d1;
-  --color-primary-container: #2b4f80;
-  --color-surface: #f4efe8;
-  --color-surface-container: #eee7dc;
-  --color-tertiary: #8e6b27;
-  --color-error-container: #ffdad6;
-  --color-on-tertiary-fixed: #493506;
-  --color-surface-container-lowest: #fffdf9;
-  --color-on-secondary: #ffffff;
-  --color-on-primary-fixed: #f5f8ff;
-  --color-error: #ba1a1a;
-  --color-tertiary-fixed: #f2dfab;
-  --color-on-secondary-fixed-variant: #5b6575;
-  --color-outline: #7f7a72;
-  --color-tertiary-container: #f2e4c1;
-  --color-on-primary-container: #eef4ff;
-  --color-background: #f2ede5;
-  --color-surface-tint: #17315b;
-  --color-on-secondary-container: #667085;
-  --color-on-error-container: #93000a;
-  --color-primary-fixed: #dbe8ff;
-  --color-on-tertiary-fixed-variant: #73561b;
-  --color-on-background: #1f2937;
-  --color-on-tertiary: #ffffff;
-  --color-secondary: #5e6d82;
-  --color-primary-fixed-dim: #b9cdf0;
-  --color-on-secondary-fixed: #212b39;
-  --color-surface-dim: #d6d0c6;
-  --color-secondary-fixed-dim: #ccd6e3;
-  --color-primary: #17315b;
-  --color-on-primary: #ffffff;
-  --color-outline-variant: #cec6b8;
-  --color-inverse-primary: #b9cdf0;
-  --color-secondary-container: #e0e6ef;
-  --color-surface-container-low: #f8f3ec;
-  --color-inverse-on-surface: #f7f5f1;
-  --color-surface-container-high: #e7e1d8;
-  --color-surface-variant: #e6dfd3;
-  --color-on-error: #ffffff;
-  --color-surface-bright: #f9f6f1;
-  --color-on-surface-variant: #5a5349;
-  --color-secondary-fixed: #eef3fb;
-
+/* Custom Bootstrap theme overrides */
+:root {
+  --bs-primary: #17315b;
+  --bs-secondary: #5e6d82;
+  --bs-success: #28a745;
+  --bs-danger: #ba1a1a;
+  --bs-warning: #f2dfab;
+  --bs-info: #b9cdf0;
+  --bs-light: #f4efe8;
+  --bs-dark: #1f2937;
+  
+  --bs-body-bg: #f4efe8;
+  --bs-body-color: #1f2937;
+  --bs-border-color: #e6dfd3;
   --font-headline: "Manrope", sans-serif;
   --font-body: "Inter", sans-serif;
   --font-label: "Inter", sans-serif;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: #f4efe8;
+  color: #1f2937;
+}
+
+.body-light {
+  background: linear-gradient(135deg, rgba(18,42,76,0.08), transparent 42%), 
+              linear-gradient(315deg, rgba(203,160,82,0.14), transparent 34%);
+  background-color: #f4efe8;
+}
+
+/* Material Symbols support */
+.material-symbols-outlined {
+  font-variation-settings: 'wght' 400, 'FILL' 0;
 }
 
 @layer base {

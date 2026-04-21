@@ -1,4 +1,4 @@
-// Menu Items mapped to tbl_StoreProducts schema
+// Menu Items mapped to tbl_storeproducts schema
 export const initialMenuItems = [
   {
     SPv_ID: 'PROD-001',
