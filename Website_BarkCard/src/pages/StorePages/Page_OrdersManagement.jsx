@@ -50,16 +50,16 @@ export default function OrdersManagement() {
   });
 
   const pendingOrders = orders.filter((order) => order.Ov_Status === 'Pending');
-  const preparingOrders = orders.filter((order) => order.Ov_Status === 'Preparing');
+  const processingOrders = orders.filter((order) => order.Ov_Status === 'Processing');
   const readyOrders = orders.filter((order) => order.Ov_Status === 'Ready');
   const completedOrders = orders.filter((order) => order.Ov_Status === 'Completed');
   const activeOrders = orders.filter((order) => order.Ov_Status !== 'Cancelled');
-  const queueOrdersCount = pendingOrders.length + preparingOrders.length;
+  const queueOrdersCount = pendingOrders.length + processingOrders.length;
   const kitchenLoad = activeOrders.length > 0 ? Math.round((queueOrdersCount / activeOrders.length) * 100) : 0;
 
   const completedRevenue = completedOrders.reduce((sum, order) => sum + parseAmount(order.Ov_TotalAmount), 0);
   const queuedRevenue = pendingOrders
-    .concat(preparingOrders)
+    .concat(processingOrders)
     .reduce((sum, order) => sum + parseAmount(order.Ov_TotalAmount), 0);
   const formattedCompletedRevenue = formatAmount(completedRevenue);
   const formattedQueuedRevenue = formatAmount(queuedRevenue);
@@ -94,7 +94,7 @@ export default function OrdersManagement() {
     switch (status) {
       case 'Pending':
         return 'bg-warning text-dark';
-      case 'Preparing':
+      case 'Processing':
         return 'bg-info text-dark';
       case 'Ready':
         return 'bg-primary text-white';
@@ -115,7 +115,7 @@ export default function OrdersManagement() {
       <div className="mb-5">
         <h2 className="display-5 fw-bold mb-4">Order Management</h2>
         <div className="d-flex flex-wrap gap-2">
-          {['All Orders', 'Pending', 'Preparing', 'Ready', 'Completed', 'Cancelled'].map((status) => (
+          {['All Orders', 'Pending', 'Processing', 'Ready', 'Completed', 'Cancelled'].map((status) => (
             <button
               key={status}
               onClick={() => setSelectedStatus(status)}
@@ -347,7 +347,7 @@ export default function OrdersManagement() {
                         className="form-select form-select-sm mt-1"
                       >
                         <option value="Pending">Pending</option>
-                        <option value="Preparing">Preparing</option>
+                        <option value="Processing">Processing</option>
                         <option value="Ready">Ready</option>
                         <option value="Completed">Completed</option>
                         <option value="Cancelled">Cancelled</option>

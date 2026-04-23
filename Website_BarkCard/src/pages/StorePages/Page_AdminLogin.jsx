@@ -81,7 +81,7 @@ export default function AdminLogin() {
       const { role, userId, accountEmail, fullName } = await resolveRoleByEmail(email);
 
       if (!role) {
-        setLoginError('Account role not found for this email. Please contact your administrator.');
+        setLoginError('There is no account associated with that email, or you do not have admin access.');
         return;
       }
 
@@ -183,13 +183,7 @@ export default function AdminLogin() {
                   </div>
                 </div>
 
-                <div className="d-flex justify-content-between align-items-center mb-4 small">
-                  <div className="form-check">
-                    <input className="form-check-input" id="remember" name="remember" type="checkbox" />
-                    <label className="form-check-label" htmlFor="remember">Keep me signed in</label>
-                  </div>
-                  <span className="badge bg-info text-dark">Admin only</span>
-                </div>
+                
 
                 <button className="btn btn-primary w-100 fw-bold py-3 rounded-3" type="submit">
                   {isSubmitting ? 'Checking account...' : null}
