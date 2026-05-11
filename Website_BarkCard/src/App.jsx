@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/StorePages/Page_Dashboard';
@@ -9,8 +9,8 @@ import AdminLogin from './pages/StorePages/Page_AdminLogin';
 import SuperAdminDashboard from './pages/SuperAdminPages/Page_SuperAdminDashboard';
 import UserManagement from './pages/SuperAdminPages/Page_SuperAdminUserManagement';
 import { initialOrders } from './data/orders';
-import { initialMenuItems } from './data/menuItems';
 import { useAuth } from './hooks/useAuth';
+import { supabase } from './supabaseClient';
 
 const isSuperAdminRole = (role) => {
   const normalizedRole = String(role || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
@@ -58,9 +58,42 @@ function RequireSuperAdmin({ children }) {
   return children;
 }
 
+const mapStoreProductToMenuItem = (product) => ({
+  SPv_ID: product.spv_id,
+  CSv_ID: product.csv_id ?? 1,
+  SPv_RefNum: product.spv_refnum ?? '',
+  SPv_Name: product.spv_name ?? '',
+  SPv_Description: '',
+  SPv_Category: 'Main Course',
+  SPv_Price: Number(product.spv_price ?? 0),
+  SPv_Quantity: Number(product.spv_quantity ?? 0),
+  SPv_IMG: product.spv_img ?? ''
+});
+
 function App() {
   const [orders] = useState(initialOrders);
-  const [menuItems, setMenuItems] = useState(initialMenuItems);
+  const [menuItems, setMenuItems] = useState([]);
+
+  const fetchMenuItems = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('tbl_storeproducts')
+        .select('spv_id, csv_id, spv_img, spv_refnum, spv_name, spv_quantity, spv_price')
+        .order('spv_name', { ascending: true });
+
+      if (error) {
+        throw error;
+      }
+
+      setMenuItems((data ?? []).map(mapStoreProductToMenuItem));
+    } catch (error) {
+      console.error('Error fetching menu items from Supabase:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMenuItems();
+  }, []);
 
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
@@ -111,7 +144,7 @@ function App() {
             path="menu"
             element={(
               <RequireStoreAccess>
-                <MenuManagement menuItems={menuItems} setMenuItems={setMenuItems} />
+                <MenuManagement menuItems={menuItems} setMenuItems={setMenuItems} refreshMenuItems={fetchMenuItems} />
               </RequireStoreAccess>
             )}
           />

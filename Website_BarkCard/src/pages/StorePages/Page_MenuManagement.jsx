@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { supabase } from '../../supabaseClient';
+import { useAuth } from '../../hooks/useAuth';
 
 const categoryOptions = ['All Categories', 'Main Course', 'Beverages'];
 
 const defaultFormData = {
+  SPv_RefNum: '',
   SPv_Name: '',
   SPv_Description: '',
   SPv_Category: 'Main Course',
@@ -11,6 +14,32 @@ const defaultFormData = {
   SPv_Quantity: '',
   SPv_IMG: ''
 };
+
+const MAX_IMAGE_URL_LENGTH = 2048;
+const PRODUCT_IMAGES_BUCKET = import.meta.env.VITE_SUPABASE_PRODUCT_IMAGES_BUCKET || 'product-images';
+const DEFAULT_PREVIEW_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200">
+    <rect width="300" height="200" fill="#f1f3f5" />
+    <rect x="24" y="24" width="252" height="152" rx="14" fill="#ffffff" stroke="#d0d7de" />
+    <path d="M70 136l36-36 28 28 44-52 52 60H70z" fill="#cbd5e1" />
+    <circle cx="106" cy="82" r="14" fill="#e2e8f0" />
+    <text x="150" y="168" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" fill="#6b7280">
+      Upload or Enter URL
+    </text>
+  </svg>`
+)}`;
+
+const mapStoreProductToMenuItem = (product, fallbackValues = {}) => ({
+  SPv_ID: product.spv_id,
+  CSv_ID: product.csv_id ?? fallbackValues.CSv_ID ?? 1,
+  SPv_RefNum: product.spv_refnum ?? fallbackValues.SPv_RefNum ?? '',
+  SPv_Name: product.spv_name ?? fallbackValues.SPv_Name ?? '',
+  SPv_Description: fallbackValues.SPv_Description ?? '',
+  SPv_Category: fallbackValues.SPv_Category ?? 'Main Course',
+  SPv_Price: Number(product.spv_price ?? fallbackValues.SPv_Price ?? 0),
+  SPv_Quantity: Number(product.spv_quantity ?? fallbackValues.SPv_Quantity ?? 0),
+  SPv_IMG: product.spv_img ?? fallbackValues.SPv_IMG ?? ''
+});
 
 const getStockMeta = (stock) => {
   if (stock === 0) {
@@ -49,9 +78,32 @@ const getStockBarWidth = (stock) => `${Math.min(100, Math.max(0, Math.round((sto
 
 const formatPrice = (price) => `₱${Number(price).toFixed(2)}`;
 
-export default function MenuManagement({ menuItems, setMenuItems }) {
+const sanitizeFileName = (fileName) =>
+  fileName
+    .toLowerCase()
+    .replace(/[^a-z0-9.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+
+const normalizeString = (value) => String(value ?? '').trim();
+
+const generateUniqueRefNum = (name = '') => {
+  const normalizedName = String(name)
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 24) || 'ITEM';
+
+  const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`.toUpperCase();
+  return `${normalizedName}-${uniqueSuffix}`;
+};
+
+export default function MenuManagement({ menuItems, setMenuItems, refreshMenuItems }) {
   const { globalSearchTerm = '' } = useOutletContext() ?? {};
-  const defaultPreview = 'https://via.placeholder.com/300x200?text=Upload+or+Enter+URL';
+  const { user: currentAuthUser } = useAuth();
+  const defaultPreview = DEFAULT_PREVIEW_IMAGE;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState('All Categories');
   const [searchTerm, setSearchTerm] = useState('');
@@ -59,8 +111,87 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
   const [itemPendingDelete, setItemPendingDelete] = useState(null);
   const [formData, setFormData] = useState(defaultFormData);
   const [imagePreview, setImagePreview] = useState(defaultPreview);
-  const [, setImageFile] = useState(null);
+  const [imageFile, setImageFile] = useState(null);
   const [dragActive, setDragActive] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [storeId, setStoreId] = useState(null);
+
+  useEffect(() => {
+    if (!refreshMenuItems) return;
+
+    refreshMenuItems().catch((error) => {
+      console.error('Error refreshing menu items on Menu Management load:', error);
+    });
+  }, [refreshMenuItems]);
+
+  useEffect(() => {
+    const fetchStoreId = async () => {
+      try {
+        const authUserId = String(currentAuthUser?.id || '').trim();
+        const authEmail = String(currentAuthUser?.email || '').trim().toLowerCase();
+
+        console.log('Auth context user:', currentAuthUser);
+        console.log('Auth user id:', authUserId);
+        console.log('Auth email:', authEmail);
+
+        let resolvedUvId = authUserId;
+
+        if (!resolvedUvId && !authEmail) {
+          setStoreId(null);
+          return;
+        }
+
+        if (!resolvedUvId && authEmail) {
+          const { data: userRow, error: userError } = await supabase
+            .from('tbl_user')
+            .select('uv_id, uv_email')
+            .ilike('uv_email', authEmail)
+            .maybeSingle();
+
+          console.log('Fetched tbl_user row:', userRow);
+          console.log('tbl_user error:', userError);
+
+          if (userError) {
+            throw userError;
+          }
+
+          resolvedUvId = String(userRow?.uv_id || '').trim();
+        }
+
+        console.log('Resolved uv_id:', resolvedUvId);
+
+        if (!resolvedUvId) {
+          setStoreId(null);
+          return;
+        }
+
+        const { data: stores, error: storeError } = await supabase
+          .from('tbl_canteenstore')
+          .select('csv_id, csv_name, uv_id');
+
+        console.log('All canteen stores:', stores);
+        console.log('Canteen store error:', storeError);
+
+        if (storeError) {
+          throw storeError;
+        }
+
+        const matchedStore = stores?.find(
+          (store) => String(store?.uv_id || '').trim() === resolvedUvId
+        );
+
+        console.log('Fetched canteen store:', matchedStore ?? null);
+
+        setStoreId(matchedStore?.csv_id ?? null);
+      } catch (error) {
+        console.error('Error fetching canteen store for current user:', error);
+        setStoreId(null);
+      }
+    };
+
+    fetchStoreId();
+  }, [currentAuthUser?.email, currentAuthUser?.id]);
 
   const filteredItems = menuItems.filter((item) => {
     const categoryMatch = activeCategory === 'All Categories' || item.SPv_Category === activeCategory;
@@ -87,6 +218,8 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
     setFormData(defaultFormData);
     setImageFile(null);
     setImagePreview(defaultPreview);
+    setIsSubmitting(false);
+    setSubmitError('');
   };
 
   const openAddModal = () => {
@@ -94,6 +227,7 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
     setFormData(defaultFormData);
     setImageFile(null);
     setImagePreview(defaultPreview);
+    setSubmitError('');
     setIsModalOpen(true);
   };
 
@@ -163,7 +297,9 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
 
   const handleEditItem = (item) => {
     setEditingItemId(item.SPv_ID);
+    setSubmitError('');
     setFormData({
+      SPv_RefNum: item.SPv_RefNum,
       SPv_Name: item.SPv_Name,
       SPv_Description: item.SPv_Description,
       SPv_Category: item.SPv_Category,
@@ -180,30 +316,101 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
     setItemPendingDelete(item);
   };
 
-  const confirmDeleteItem = () => {
+  const confirmDeleteItem = async () => {
     if (!itemPendingDelete) return;
 
-    setMenuItems((prev) => prev.filter((item) => item.SPv_ID !== itemPendingDelete.SPv_ID));
-    setItemPendingDelete(null);
+    try {
+      const { error } = await supabase
+        .from('tbl_storeproducts')
+        .delete()
+        .eq('spv_id', itemPendingDelete.SPv_ID);
+
+      if (error) {
+        throw error;
+      }
+
+      setMenuItems((prev) => prev.filter((item) => item.SPv_ID !== itemPendingDelete.SPv_ID));
+      setItemPendingDelete(null);
+    } catch (error) {
+      console.error('Error deleting menu item from Supabase:', error);
+    }
   };
 
   const cancelDeleteItem = () => {
     setItemPendingDelete(null);
   };
 
-  const handleSubmit = (e) => {
+  const uploadImageFile = async (file) => {
+    const safeFileName = sanitizeFileName(file.name || 'menu-item-image');
+    const extension = safeFileName.includes('.') ? safeFileName.split('.').pop() : 'jpg';
+    const filePath = `menu-items/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(PRODUCT_IMAGES_BUCKET)
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type || 'image/jpeg'
+      });
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from(PRODUCT_IMAGES_BUCKET)
+      .getPublicUrl(filePath);
+
+    if (!publicUrlData?.publicUrl) {
+      throw new Error(`Image uploaded, but no public URL was returned from bucket "${PRODUCT_IMAGES_BUCKET}".`);
+    }
+
+    return publicUrlData.publicUrl;
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
+    setSubmitError('');
+
+    if (!storeId) {
+      setSubmitError('No canteen store is linked to this account yet. Please create or assign a store in tbl_canteenstore first.');
+      setIsSubmitting(false);
+      return;
+    }
 
     const normalizedName = formData.SPv_Name.trim();
     const normalizedDescription = formData.SPv_Description.trim();
     const normalizedPrice = Number.parseFloat(formData.SPv_Price);
     const normalizedQuantity = Number.parseInt(formData.SPv_Quantity, 10);
-    const normalizedImageUrl = formData.SPv_IMG.trim() || imagePreview;
+    let normalizedImageUrl = formData.SPv_IMG.trim() || imagePreview;
 
-    const nextItem = {
-      SPv_ID: editingItemId || `PROD-${Date.now()}`,
-      CSv_ID: 1,
-      SPv_RefNum: editingItemId ? formData.SPv_RefNum || `REF-${Date.now()}` : `REF-${Date.now()}`,
+    if (imageFile) {
+      try {
+        normalizedImageUrl = await uploadImageFile(imageFile);
+      } catch (error) {
+        console.error('Error uploading menu item image to Supabase Storage:', error);
+        setSubmitError(
+          error?.message ||
+          `Failed to upload image. Make sure the "${PRODUCT_IMAGES_BUCKET}" Supabase Storage bucket exists and allows uploads.`
+        );
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
+    if (normalizedImageUrl.length > MAX_IMAGE_URL_LENGTH) {
+      setSubmitError(`Image URL is too long. Please use a shorter public image URL under ${MAX_IMAGE_URL_LENGTH} characters.`);
+      setIsSubmitting(false);
+      return;
+    }
+
+    const fallbackValues = {
+      CSv_ID: storeId,
+      SPv_RefNum: editingItemId
+        ? formData.SPv_RefNum || generateUniqueRefNum(normalizedName)
+        : generateUniqueRefNum(normalizedName),
+      SPv_ID: editingItemId ?? null,
       SPv_Name: normalizedName,
       SPv_Description: normalizedDescription,
       SPv_Category: formData.SPv_Category,
@@ -212,13 +419,52 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
       SPv_IMG: normalizedImageUrl
     };
 
-    if (editingItemId) {
-      setMenuItems((prev) => prev.map((item) => (item.SPv_ID === editingItemId ? nextItem : item)));
-    } else {
-      setMenuItems((prev) => [nextItem, ...prev]);
-    }
+    const productPayload = {
+      csv_id: fallbackValues.CSv_ID,
+      spv_img: fallbackValues.SPv_IMG,
+      spv_refnum: fallbackValues.SPv_RefNum,
+      spv_name: fallbackValues.SPv_Name,
+      spv_quantity: fallbackValues.SPv_Quantity,
+      spv_price: fallbackValues.SPv_Price
+    };
 
-    closeModal();
+    try {
+      if (editingItemId) {
+        const { data, error } = await supabase
+          .from('tbl_storeproducts')
+          .update(productPayload)
+          .eq('spv_id', editingItemId)
+          .select('spv_id, csv_id, spv_img, spv_refnum, spv_name, spv_quantity, spv_price')
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        const updatedItem = mapStoreProductToMenuItem(data, fallbackValues);
+        setMenuItems((prev) => prev.map((item) => (item.SPv_ID === editingItemId ? updatedItem : item)));
+      } else {
+        const { data, error } = await supabase
+          .from('tbl_storeproducts')
+          .insert(productPayload)
+          .select('spv_id, csv_id, spv_img, spv_refnum, spv_name, spv_quantity, spv_price')
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        const createdItem = mapStoreProductToMenuItem(data, fallbackValues);
+        setMenuItems((prev) => [createdItem, ...prev]);
+      }
+
+      closeModal();
+    } catch (error) {
+      console.error('Error saving menu item to Supabase:', error);
+      setSubmitError(error?.message || 'Failed to save menu item.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -232,6 +478,11 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
                 <button onClick={closeModal} className="btn-close" aria-label="Close"></button>
               </div>
               <form onSubmit={handleSubmit} className="modal-body">
+                {submitError && (
+                  <div className="alert alert-danger py-2" role="alert">
+                    {submitError}
+                  </div>
+                )}
                 <div className="mb-3">
                   <label className="form-label fw-semibold">Item Name</label>
                   <input
@@ -346,8 +597,8 @@ export default function MenuManagement({ menuItems, setMenuItems }) {
                   <button type="button" onClick={closeModal} className="btn btn-light flex-grow-1">
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-primary flex-grow-1">
-                    {editingItemId ? 'Save Changes' : 'Add Item'}
+                  <button type="submit" className="btn btn-primary flex-grow-1" disabled={isSubmitting}>
+                    {isSubmitting ? 'Saving...' : editingItemId ? 'Save Changes' : 'Add Item'}
                   </button>
                 </div>
               </form>

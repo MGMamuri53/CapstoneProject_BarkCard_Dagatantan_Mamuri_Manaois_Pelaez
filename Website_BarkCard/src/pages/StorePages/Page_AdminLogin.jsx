@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../supabaseClient';
 
+const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
+
 const normalizeRole = (value) => {
   const normalized = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
 
@@ -26,7 +28,7 @@ const normalizeRole = (value) => {
 };
 
 const resolveRoleByEmail = async (email) => {
-  const normalizedEmail = String(email || '').trim();
+  const normalizedEmail = normalizeEmail(email);
   if (!normalizedEmail) {
     return { role: null, userId: null, accountEmail: '', fullName: '' };
   }
@@ -34,29 +36,27 @@ const resolveRoleByEmail = async (email) => {
   try {
     const { data, error } = await supabase
       .from('tbl_user')
-      // CHANGED: Use lowercase column names to match your DB screenshot
       .select('uv_email, uv_role, uv_id, uv_firstname, uv_lastname')
-      .eq('uv_email', normalizedEmail)
+      .ilike('uv_email', normalizedEmail)
       .maybeSingle();
 
     if (error) {
-      console.error("Database error:", error); // Added for debugging
+      console.error('Database error:', error);
       return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '' };
     }
 
     if (data) {
-      // CHANGED: Access properties using lowercase keys
       const role = normalizeRole(data.uv_role);
       const fullName = `${data.uv_firstname || ''} ${data.uv_lastname || ''}`.trim();
       return {
         role,
         userId: data.uv_id ?? null,
-        accountEmail: String(data.uv_email || normalizedEmail),
+        accountEmail: normalizeEmail(data.uv_email || normalizedEmail),
         fullName
       };
     }
   } catch (err) {
-    console.error("Execution error:", err);
+    console.error('Execution error:', err);
     return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '' };
   }
 
@@ -77,18 +77,32 @@ export default function AdminLogin() {
 
     try {
       const formData = new FormData(event.currentTarget);
-      const email = String(formData.get('username') || '').trim();
-      const { role, userId, accountEmail, fullName } = await resolveRoleByEmail(email);
+      const email = normalizeEmail(formData.get('username'));
+      const password = String(formData.get('password') || '');
+
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (authError || !authData.user) {
+        setLoginError('Invalid email or password.');
+        return;
+      }
+
+      const authenticatedEmail = normalizeEmail(authData.user.email);
+      const { role, userId, accountEmail, fullName } = await resolveRoleByEmail(authenticatedEmail);
 
       if (!role) {
+        await supabase.auth.signOut();
         setLoginError('There is no account associated with that email, or you do not have admin access.');
         return;
       }
 
       login({ email: accountEmail, role, id: userId, name: fullName });
 
-      if (role === 'SuperAdmin') {
-        navigate('/superadmin');
+      if (role === 'Staff') {
+        navigate('/staff');
         return;
       }
 
@@ -107,7 +121,7 @@ export default function AdminLogin() {
           {/* Left side - Brand section */}
           <div className="col-md-6 d-flex flex-column justify-content-between p-5 p-md-6" style={{ background: 'linear-gradient(180deg, #f4d36f 0%, #efc65a 100%)' }}>
             <div>
-              <p className="small fw-semibold text-uppercase text-muted">BarkCard Admin</p>
+              <p className="small fw-semibold text-uppercase text-muted">BARKCARD STAFF PORTAL</p>
               <h1 className="fw-bold fs-2 my-3">Welcome back to the campus dining portal.</h1>
               <p className="text-muted mb-0">
                 Manage menus, orders, and analytics from one clear dashboard built for day-to-day campus operations.

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { useAuth } from '../../hooks/useAuth'; // Adjust the import path as needed
+import { supabase } from '../../supabaseClient';
 
 const avatarBackgrounds = [
   'bg-primary text-white',
