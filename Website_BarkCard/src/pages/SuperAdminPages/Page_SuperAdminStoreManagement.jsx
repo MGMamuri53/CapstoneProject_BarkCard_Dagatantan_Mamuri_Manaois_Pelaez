@@ -16,6 +16,9 @@ const StoreManagement = () => {
   const [selectedStore, setSelectedStore] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [storeToDelete, setStoreToDelete] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     location: '',
@@ -23,6 +26,7 @@ const StoreManagement = () => {
     phone: '',
     email: ''
   });
+  const [phoneError, setPhoneError] = useState("");
 
   // State variables for the store ID generation
   const [idYear, setIdYear] = useState(new Date().getFullYear().toString());
@@ -106,6 +110,10 @@ const StoreManagement = () => {
         toast.error('Please fill in all required fields');
         return;
       }
+      if (formData.phone && !validatePhoneNumber(formData.phone)) {
+        toast.error('Invalid phone number. Must start with 09 and be 11 digits');
+        return;
+      }
 
       if (!idYear || !idNumber) {
         toast.error('Please complete the Store ID assignment');
@@ -151,6 +159,10 @@ const StoreManagement = () => {
         toast.error('Please fill in all required fields');
         return;
       }
+      if (formData.phone && !validatePhoneNumber(formData.phone)) {
+        toast.error('Invalid phone number. Must start with 09 and be 11 digits');
+        return;
+      }
 
       const { error } = await supabase
         .from('tbl_canteenstore')
@@ -176,23 +188,61 @@ const StoreManagement = () => {
     }
   };
 
-  const handleDeleteStore = async (storeId) => {
-    if (window.confirm('Are you sure you want to delete this store?')) {
-      try {
-        const { error } = await supabase
-          .from('tbl_canteenstore')
-          .delete()
-          .eq('csv_id', storeId);
+  const openDeleteModal = (store) => {
+    setStoreToDelete(store);
+    setDeleteConfirmName("");
+    setShowDeleteModal(true);
+  };
 
-        if (error) throw error;
+  const handleConfirmDelete = async () => {
+    if (!storeToDelete) return;
+    
+    if (deleteConfirmName !== storeToDelete.name) {
+      toast.error('Store name does not match. Please type the exact store name.');
+      return;
+    }
 
-        await fetchStores();
-        setSelectedStore(null);
-        toast.success('Store deleted successfully');
-      } catch (err) {
-        console.error('Error deleting store:', err);
-        toast.error('Failed to delete store');
-      }
+    try {
+      const { error } = await supabase
+        .from('tbl_canteenstore')
+        .delete()
+        .eq('csv_id', storeToDelete.id);
+
+      if (error) throw error;
+
+      await fetchStores();
+      setSelectedStore(null);
+      setShowDeleteModal(false);
+      setStoreToDelete(null);
+      setDeleteConfirmName("");
+      toast.success('Store deleted successfully');
+    } catch (err) {
+      console.error('Error deleting store:', err);
+      toast.error('Failed to delete store');
+    }
+  };
+
+  const validatePhoneNumber = (phone) => {
+    // Check if starts with 09
+    if (!phone.startsWith('09')) {
+      setPhoneError('Phone must start with 09');
+      return false;
+    }
+    // Check if exactly 11 digits
+    if (phone.length !== 11 || !/^\d+$/.test(phone)) {
+      setPhoneError('Phone must be exactly 11 digits');
+      return false;
+    }
+    setPhoneError("");
+    return true;
+  };
+
+  const handlePhoneChange = (value) => {
+    setFormData({ ...formData, phone: value });
+    if (value) {
+      validatePhoneNumber(value);
+    } else {
+      setPhoneError("");
     }
   };
 
@@ -304,12 +354,25 @@ const StoreManagement = () => {
                         Edit
                       </button>
                       <button
-                        onClick={() => handleDeleteStore(store.id)}
-                        className="btn btn-sm btn-outline-danger fw-bold"
-                        style={{ flex: 1 }}
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary fw-bold"
+                        style={{ flex: 0, padding: '0.375rem 0.5rem' }}
+                        data-bs-toggle="dropdown"
+                        title="More options"
                       >
-                        Delete
+                        ⋮
                       </button>
+                      <ul className="dropdown-menu dropdown-menu-end shadow-sm" style={{ minWidth: '150px' }}>
+                        <li>
+                          <button
+                            type="button"
+                            onClick={() => openDeleteModal(store)}
+                            className="dropdown-item text-danger fw-bold"
+                          >
+                            🗑️ Delete Store
+                          </button>
+                        </li>
+                      </ul>
                     </div>
                   </div>
                 </div>
@@ -401,11 +464,12 @@ const StoreManagement = () => {
                     <label className="form-label fw-bold">Phone</label>
                     <input
                       type="tel"
-                      className="form-control"
+                      className={`form-control ${phoneError ? 'is-invalid' : ''}`}
                       value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      placeholder="(555) 123-4567"
+                      onChange={(e) => handlePhoneChange(e.target.value)}
+                      placeholder="09XXXXXXXXX"
                     />
+                    {phoneError && <div className="invalid-feedback d-block">{phoneError}</div>}
                   </div>
                   <div className="mb-3">
                     <label className="form-label fw-bold">Email</label>
@@ -474,10 +538,12 @@ const StoreManagement = () => {
                     <label className="form-label fw-bold">Phone</label>
                     <input
                       type="tel"
-                      className="form-control"
+                      className={`form-control ${phoneError ? 'is-invalid' : ''}`}
                       value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      onChange={(e) => handlePhoneChange(e.target.value)}
+                      placeholder="09XXXXXXXXX"
                     />
+                    {phoneError && <div className="invalid-feedback d-block">{phoneError}</div>}
                   </div>
                   <div className="mb-3">
                     <label className="form-label fw-bold">Email</label>
@@ -494,6 +560,52 @@ const StoreManagement = () => {
                   <button type="submit" className="btn btn-primary fw-bold">Save Changes</button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && storeToDelete && (
+        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content border-0 shadow">
+              <div className="modal-header bg-danger text-white">
+                <h5 className="modal-title fw-bold">⚠️ Delete Store - Final Warning</h5>
+                <button type="button" className="btn-close btn-close-white" onClick={() => setShowDeleteModal(false)}></button>
+              </div>
+              <div className="modal-body p-4">
+                <div className="alert alert-danger" role="alert">
+                  <strong>This action cannot be undone!</strong>
+                  <br/>
+                  You are about to permanently delete this store and all associated data.
+                </div>
+                <p className="mb-3">
+                  To confirm deletion, please type the exact store name below:
+                </p>
+                <div className="mb-3 p-3 bg-light rounded border">
+                  <strong style={{ color: colors.cardBlue }}>{storeToDelete.name}</strong>
+                </div>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Enter store name exactly as shown above"
+                  value={deleteConfirmName}
+                  onChange={(e) => setDeleteConfirmName(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="modal-footer bg-light px-4">
+                <button type="button" className="btn btn-secondary fw-bold" onClick={() => setShowDeleteModal(false)}>Cancel</button>
+                <button 
+                  type="button" 
+                  className="btn btn-danger fw-bold" 
+                  onClick={handleConfirmDelete}
+                  disabled={deleteConfirmName !== storeToDelete.name}
+                >
+                  Delete Store
+                </button>
+              </div>
             </div>
           </div>
         </div>
