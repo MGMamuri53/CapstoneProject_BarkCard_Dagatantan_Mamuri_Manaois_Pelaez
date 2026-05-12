@@ -50,7 +50,10 @@ const Dashboard = () => {
           </div>
           
           <div className="d-flex align-items-center text-white gap-3">
-            <span className="me-2">Hi, <span className="fw-bold">{user?.name || 'Admin'}</span></span>
+            <div className="text-end">
+              <span className="me-2 d-block">Hi, <span className="fw-bold">{user?.name || 'Admin'}</span></span>
+              <span className="small text-white-50">{user?.email || 'superadmin@barkcard.edu'}</span>
+            </div>
             <button 
               onClick={handleLogout}
               className="btn btn-sm btn-light text-danger fw-bold"

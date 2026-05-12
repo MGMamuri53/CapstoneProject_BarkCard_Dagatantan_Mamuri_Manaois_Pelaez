@@ -4,11 +4,14 @@ import './index.css'
 import 'bootstrap-icons/font/bootstrap-icons.css'
 import App from './App.jsx'
 import { AuthProvider } from './hooks/AuthProvider.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <AuthProvider>
-      <App />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </ErrorBoundary>
   </StrictMode>,
 )

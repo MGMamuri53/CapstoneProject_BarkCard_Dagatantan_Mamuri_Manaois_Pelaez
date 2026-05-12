@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -120,7 +119,6 @@ export default function AdminPage_UserManagement() {
     uv_lastname: "",
     uv_firstname: "",
     uv_middlename: "",
-    uv_email: "",
     uv_role: "Student"
   });
 
@@ -149,35 +147,64 @@ export default function AdminPage_UserManagement() {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      
+      // Fetch all users from tbl_user
+      const { data: usersData, error: usersError } = await supabase
         .from('tbl_user')
-        .select(`
-          uv_id,
-          uv_lastname,
-          uv_firstname,
-          uv_middlename,
-          uv_email,
-          uv_role,
-          tbl_userbalance (ubv_nfcid, ubv_amount)
-        `);
+        .select('uv_id, uv_lastname, uv_firstname, uv_middlename, uv_email, uv_role')
+        .order('uv_lastname', { ascending: true });
 
-      if (error) throw error;
+      if (usersError) throw usersError;
 
-      const transformedUsers = data.map(u => ({
+      if (!usersData || usersData.length === 0) {
+        console.log('No users found in database');
+        setUsers([]);
+        return;
+      }
+
+      console.log(`Fetched ${usersData.length} users from database`);
+
+      // Fetch all user balances
+      const { data: balanceData, error: balanceError } = await supabase
+        .from('tbl_student_balance') // Updated table name
+        .select('uv_id, sv_balance'); // Removed nfcid, updated to sv_balance
+
+      // ADD THIS LINE:
+      console.log("🔥 BALANCE DATA FROM DB:", balanceData);
+
+      if (balanceError) {
+        console.warn('Error fetching balances, continuing without balance data:', balanceError);
+      }
+
+      // Create a map of user IDs to balance info for quick lookup
+      const balanceMap = {};
+      if (balanceData) {
+        balanceData.forEach(b => {
+          // Double check that it says b.sv_balance here!
+          balanceMap[b.uv_id] = { 
+            nfcId: "Unlinked", 
+            amount: parseFloat(b.sv_balance) || 0 
+          };
+        });
+      }
+
+      // Transform and merge user and balance data
+      const transformedUsers = usersData.map(u => ({
         id: u.uv_id,
-        lastName: u.uv_lastname,
-        firstName: u.uv_firstname,
+        lastName: u.uv_lastname || '',
+        firstName: u.uv_firstname || '',
         middleName: u.uv_middlename || '',
-        email: u.uv_email,
-        role: u.uv_role,
-        nfcId: u.tbl_userbalance?.[0]?.ubv_nfcid || "Unlinked",
-        balance: u.tbl_userbalance?.[0]?.ubv_amount || 0
+        email: u.uv_email || '',
+        role: u.uv_role || 'Student',
+        nfcId: balanceMap[u.uv_id]?.nfcId || "Unlinked",
+        balance: balanceMap[u.uv_id]?.amount || 0
       }));
 
+      console.log(`Transformed ${transformedUsers.length} users with balance information`);
       setUsers(transformedUsers);
     } catch (err) {
       console.error('Error fetching users:', err);
-      toast.error('Failed to load users');
+      toast.error('Failed to load users: ' + (err.message || 'Unknown error'));
     } finally {
       setLoading(false);
     }
@@ -189,24 +216,47 @@ export default function AdminPage_UserManagement() {
     setIdNumber(`${timestamp}${random}`);
   };
 
+  // Generate email from student ID (remove dashes and add @outlook.com)
+  const generateEmailFromId = (year, number) => {
+    if (!year || !number) return '';
+    const studentId = `${year}${number}`.replace(/-/g, ''); // Remove all dashes
+    return `${studentId}@outlook.com`;
+  };
+
   const handleRegisterUser = async (e) => {
     e.preventDefault();
     try {
+      // Validate student ID
+      if (!idYear || !idNumber) {
+        toast.error('Please complete the User ID assignment');
+        return;
+      }
+
+      if (!regForm.uv_firstname || !regForm.uv_lastname) {
+        toast.error('Please enter first and last name');
+        return;
+      }
+
       const fullUserId = `${idYear}-${idNumber}`;
+      const generatedEmail = generateEmailFromId(idYear, idNumber);
 
       const finalData = {
         uv_id: fullUserId,
-        ...regForm,
-        uv_middlename: noMiddleName ? "" : regForm.uv_middlename
+        uv_firstname: regForm.uv_firstname.trim(),
+        uv_lastname: regForm.uv_lastname.trim(),
+        uv_middlename: noMiddleName ? "" : (regForm.uv_middlename?.trim() || ""),
+        uv_email: generatedEmail,
+        uv_role: regForm.uv_role,
+        uv_nfcid: null
       };
 
       const { error: userErr } = await supabase.from('tbl_user').insert([finalData]);
       if (userErr) throw userErr;
 
-      const { error: balErr } = await supabase.from('tbl_userbalance').insert([{
+      // Use the correct table and omit the missing NFC column
+      const { error: balErr } = await supabase.from('tbl_student_balance').insert([{
         uv_id: fullUserId,
-        ubv_amount: 0,
-        ubv_nfcid: null
+        sv_balance: 0 
       }]);
       if (balErr) throw balErr;
 
@@ -215,7 +265,7 @@ export default function AdminPage_UserManagement() {
       
       setIdNumber("");
       setNoMiddleName(false);
-      setRegForm({ uv_lastname: "", uv_firstname: "", uv_middlename: "", uv_email: "", uv_role: "Student" });
+      setRegForm({ uv_lastname: "", uv_firstname: "", uv_middlename: "", uv_role: "Student" });
       fetchUsers();
     } catch (err) {
       toast.error(err.message || "Registration failed");
@@ -232,8 +282,8 @@ export default function AdminPage_UserManagement() {
     try {
       const newBalance = selectedUser.balance + amount;
       const { error } = await supabase
-        .from('tbl_userbalance')
-        .update({ ubv_amount: newBalance })
+        .from('tbl_student_balance') // Updated table name
+        .update({ sv_balance: newBalance }) // Updated column name
         .eq('uv_id', selectedUserId);
 
       if (error) throw error;
@@ -242,7 +292,8 @@ export default function AdminPage_UserManagement() {
       toast.success(`Balance updated to ${money(newBalance)}`);
       setShowDepositModal(false);
       setDepositAmount("");
-    } catch (err) {
+      // eslint-disable-next-line no-unused-vars
+    } catch (_err) {
       toast.error('Failed to update balance');
     }
   };
@@ -266,7 +317,8 @@ export default function AdminPage_UserManagement() {
       setUsers(prev => prev.map(u => u.id === selectedUserId ? { ...u, ...editForm } : u));
       toast.success('Profile updated successfully');
       setShowEditModal(false);
-    } catch (err) {
+      // eslint-disable-next-line no-unused-vars
+    } catch (_err) {
       toast.error('Failed to update profile');
     }
   };
@@ -421,7 +473,7 @@ export default function AdminPage_UserManagement() {
                   {selectedUser && (
                      <div className="p-3 rounded border bg-light shadow-sm">
                         <h6 className="mb-2 fw-bold text-primary" style={{fontSize: '0.85rem'}}>Selected Record</h6>
-                        <div className="small"><strong>Name:</strong> {selectedUser.firstName}</div>
+                        <div className="small"><strong>Name:</strong> {selectedUser.lastName}, {selectedUser.firstName}</div>
                         <div className="small"><strong>ID:</strong> {selectedUser.id}</div>
                         <div className="small mt-2">
                           <span className={`badge ${selectedUser.role === 'Hold' ? 'bg-danger' : 'bg-success'}`}>
@@ -522,8 +574,20 @@ export default function AdminPage_UserManagement() {
                   </div>
 
                   <div className="mb-3">
-                    <label className="form-label small fw-bold text-uppercase">Email</label>
-                    <input type="email" className="form-control" required value={regForm.uv_email} onChange={(e) => setRegForm({...regForm, uv_email: e.target.value})} />
+                    <label className="form-label small fw-bold text-uppercase">Email (Auto-generated)</label>
+                    <div className="input-group">
+                      <input 
+                        type="email" 
+                        className="form-control bg-light" 
+                        readOnly
+                        value={generateEmailFromId(idYear, idNumber)} 
+                        placeholder="Email will be auto-generated from student ID"
+                      />
+                      <span className="input-group-text small text-muted">@outlook.com</span>
+                    </div>
+                    <small className="text-muted d-block mt-1">
+                      Generated as: {idYear}{idNumber.replace(/-/g, '')}@outlook.com
+                    </small>
                   </div>
                   <div className="mb-3">
                     <label className="form-label small fw-bold text-uppercase">Role</label>

@@ -10,11 +10,14 @@ import SuperAdminDashboard from './pages/SuperAdminPages/Page_SuperAdminDashboar
 import UserManagement from './pages/SuperAdminPages/Page_SuperAdminUserManagement';
 import { initialOrders } from './data/orders';
 import { useAuth } from './hooks/useAuth';
+<<<<<<< HEAD
 import { supabase } from './supabaseClient';
+=======
+import { isSuperAdmin } from './utils/helpers';
+>>>>>>> 5d7e629342455d7918e8fa4b27b671377fe062e6
 
 const isSuperAdminRole = (role) => {
-  const normalizedRole = String(role || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
-  return normalizedRole === 'superadmin' || normalizedRole === 'superadministrator';
+  return isSuperAdmin(role);
 };
 
 function ProtectLoginPage({ children }) {
