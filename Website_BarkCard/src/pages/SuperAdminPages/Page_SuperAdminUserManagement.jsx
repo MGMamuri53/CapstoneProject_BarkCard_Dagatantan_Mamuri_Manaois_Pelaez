@@ -119,7 +119,6 @@ export default function AdminPage_UserManagement() {
     uv_lastname: "",
     uv_firstname: "",
     uv_middlename: "",
-    uv_email: "",
     uv_role: "Student"
   });
 
@@ -167,8 +166,8 @@ export default function AdminPage_UserManagement() {
 
       // Fetch all user balances
       const { data: balanceData, error: balanceError } = await supabase
-        .from('tbl_userbalance')
-        .select('uv_id, ubv_nfcid, ubv_amount');
+        .from('tbl_student_balance') // Updated table name
+        .select('uv_id, sv_balance'); // Removed nfcid, updated to sv_balance
 
       if (balanceError) {
         console.warn('Error fetching balances, continuing without balance data:', balanceError);
@@ -178,7 +177,8 @@ export default function AdminPage_UserManagement() {
       const balanceMap = {};
       if (balanceData) {
         balanceData.forEach(b => {
-          balanceMap[b.uv_id] = { nfcId: b.ubv_nfcid, amount: b.ubv_amount };
+          // Hardcode NFC ID as "Unlinked" since it's not in the database yet, map sv_balance to amount
+          balanceMap[b.uv_id] = { nfcId: "Unlinked", amount: b.sv_balance };
         });
       }
 
@@ -210,24 +210,47 @@ export default function AdminPage_UserManagement() {
     setIdNumber(`${timestamp}${random}`);
   };
 
+  // Generate email from student ID (remove dashes and add @outlook.com)
+  const generateEmailFromId = (year, number) => {
+    if (!year || !number) return '';
+    const studentId = `${year}${number}`.replace(/-/g, ''); // Remove all dashes
+    return `${studentId}@outlook.com`;
+  };
+
   const handleRegisterUser = async (e) => {
     e.preventDefault();
     try {
+      // Validate student ID
+      if (!idYear || !idNumber) {
+        toast.error('Please complete the User ID assignment');
+        return;
+      }
+
+      if (!regForm.uv_firstname || !regForm.uv_lastname) {
+        toast.error('Please enter first and last name');
+        return;
+      }
+
       const fullUserId = `${idYear}-${idNumber}`;
+      const generatedEmail = generateEmailFromId(idYear, idNumber);
 
       const finalData = {
         uv_id: fullUserId,
-        ...regForm,
-        uv_middlename: noMiddleName ? "" : regForm.uv_middlename
+        uv_firstname: regForm.uv_firstname.trim(),
+        uv_lastname: regForm.uv_lastname.trim(),
+        uv_middlename: noMiddleName ? "" : (regForm.uv_middlename?.trim() || ""),
+        uv_email: generatedEmail,
+        uv_role: regForm.uv_role,
+        uv_nfcid: null
       };
 
       const { error: userErr } = await supabase.from('tbl_user').insert([finalData]);
       if (userErr) throw userErr;
 
-      const { error: balErr } = await supabase.from('tbl_userbalance').insert([{
+      // Use the correct table and omit the missing NFC column
+      const { error: balErr } = await supabase.from('tbl_student_balance').insert([{
         uv_id: fullUserId,
-        ubv_amount: 0,
-        ubv_nfcid: null
+        sv_balance: 0 
       }]);
       if (balErr) throw balErr;
 
@@ -236,7 +259,7 @@ export default function AdminPage_UserManagement() {
       
       setIdNumber("");
       setNoMiddleName(false);
-      setRegForm({ uv_lastname: "", uv_firstname: "", uv_middlename: "", uv_email: "", uv_role: "Student" });
+      setRegForm({ uv_lastname: "", uv_firstname: "", uv_middlename: "", uv_role: "Student" });
       fetchUsers();
     } catch (err) {
       toast.error(err.message || "Registration failed");
@@ -253,8 +276,8 @@ export default function AdminPage_UserManagement() {
     try {
       const newBalance = selectedUser.balance + amount;
       const { error } = await supabase
-        .from('tbl_userbalance')
-        .update({ ubv_amount: newBalance })
+        .from('tbl_student_balance') // Updated table name
+        .update({ sv_balance: newBalance }) // Updated column name
         .eq('uv_id', selectedUserId);
 
       if (error) throw error;
@@ -545,8 +568,20 @@ export default function AdminPage_UserManagement() {
                   </div>
 
                   <div className="mb-3">
-                    <label className="form-label small fw-bold text-uppercase">Email</label>
-                    <input type="email" className="form-control" required value={regForm.uv_email} onChange={(e) => setRegForm({...regForm, uv_email: e.target.value})} />
+                    <label className="form-label small fw-bold text-uppercase">Email (Auto-generated)</label>
+                    <div className="input-group">
+                      <input 
+                        type="email" 
+                        className="form-control bg-light" 
+                        readOnly
+                        value={generateEmailFromId(idYear, idNumber)} 
+                        placeholder="Email will be auto-generated from student ID"
+                      />
+                      <span className="input-group-text small text-muted">@outlook.com</span>
+                    </div>
+                    <small className="text-muted d-block mt-1">
+                      Generated as: {idYear}{idNumber.replace(/-/g, '')}@outlook.com
+                    </small>
                   </div>
                   <div className="mb-3">
                     <label className="form-label small fw-bold text-uppercase">Role</label>
