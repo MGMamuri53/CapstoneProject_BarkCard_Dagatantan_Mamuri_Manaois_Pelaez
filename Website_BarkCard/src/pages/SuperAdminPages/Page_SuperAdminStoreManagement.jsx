@@ -27,6 +27,8 @@ const StoreManagement = () => {
     email: ''
   });
   const [phoneError, setPhoneError] = useState("");
+  const [owners, setOwners] = useState([]);
+  const [openMenuId, setOpenMenuId] = useState(null);
 
   // State variables for the store ID generation
   const [idYear, setIdYear] = useState(new Date().getFullYear().toString());
@@ -67,7 +69,34 @@ const StoreManagement = () => {
 
   useEffect(() => {
     fetchStores();
+    fetchOwners();
   }, []);
+
+  const fetchOwners = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('tbl_user')
+        .select('uv_id, uv_firstname, uv_lastname, uv_email, uv_role')
+        .eq('uv_role', 'Owner')
+        .order('uv_lastname', { ascending: true });
+
+      if (error) throw error;
+      setOwners(data || []);
+    } catch (err) {
+      console.error('Error fetching owners:', err);
+    }
+  };
+
+  const handleManagerSelect = (ownerId) => {
+    const selectedOwner = owners.find(o => o.uv_id === ownerId);
+    if (selectedOwner) {
+      setFormData({
+        ...formData,
+        manager: `${selectedOwner.uv_firstname} ${selectedOwner.uv_lastname}`,
+        email: selectedOwner.uv_email
+      });
+    }
+  };
 
   const fetchStores = async () => {
     try {
@@ -345,7 +374,7 @@ const StoreManagement = () => {
                       <div><strong>Email:</strong> {store.email}</div>
                     </div>
 
-                    <div className="d-flex gap-2 mt-3">
+                    <div className="d-flex gap-2 mt-3 position-relative">
                       <button
                         onClick={() => openEditModal(store)}
                         className="btn btn-sm btn-outline-primary fw-bold"
@@ -357,22 +386,30 @@ const StoreManagement = () => {
                         type="button"
                         className="btn btn-sm btn-outline-secondary fw-bold"
                         style={{ flex: 0, padding: '0.375rem 0.5rem' }}
-                        data-bs-toggle="dropdown"
+                        onClick={() => setOpenMenuId(openMenuId === store.id ? null : store.id)}
                         title="More options"
                       >
                         ⋮
                       </button>
-                      <ul className="dropdown-menu dropdown-menu-end shadow-sm" style={{ minWidth: '150px' }}>
-                        <li>
-                          <button
-                            type="button"
-                            onClick={() => openDeleteModal(store)}
-                            className="dropdown-item text-danger fw-bold"
-                          >
-                            🗑️ Delete Store
-                          </button>
-                        </li>
-                      </ul>
+                      {openMenuId === store.id && (
+                        <div className="position-absolute" style={{ top: '100%', right: '0', zIndex: 1000, minWidth: '150px', marginTop: '4px' }}>
+                          <div className="shadow-sm rounded bg-white border" style={{ boxShadow: '0 4px 8px rgba(0,0,0,0.15)' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                openDeleteModal(store);
+                                setOpenMenuId(null);
+                              }}
+                              className="w-100 text-start px-3 py-2 text-danger fw-bold"
+                              style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}
+                              onMouseEnter={(e) => e.target.style.backgroundColor = '#f8f9fa'}
+                              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                            >
+                              🗑️ Delete Store
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -451,14 +488,20 @@ const StoreManagement = () => {
                     />
                   </div>
                   <div className="mb-3">
-                    <label className="form-label fw-bold">Store Manager</label>
-                    <input
-                      type="text"
-                      className="form-control"
+                    <label className="form-label fw-bold">Store Manager *</label>
+                    <select
+                      className="form-select"
                       value={formData.manager}
-                      onChange={(e) => setFormData({ ...formData, manager: e.target.value })}
-                      placeholder="Manager name"
-                    />
+                      onChange={(e) => handleManagerSelect(e.target.value)}
+                      required
+                    >
+                      <option value="">-- Select Store Manager --</option>
+                      {owners.map(owner => (
+                        <option key={owner.uv_id} value={owner.uv_id}>
+                          {owner.uv_firstname} {owner.uv_lastname}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="mb-3">
                     <label className="form-label fw-bold">Phone</label>
@@ -472,13 +515,13 @@ const StoreManagement = () => {
                     {phoneError && <div className="invalid-feedback d-block">{phoneError}</div>}
                   </div>
                   <div className="mb-3">
-                    <label className="form-label fw-bold">Email</label>
+                    <label className="form-label fw-bold">Email (Auto-populated)</label>
                     <input
                       type="email"
-                      className="form-control"
+                      className="form-control bg-light"
                       value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      placeholder="store@barkcard.edu"
+                      readOnly
+                      placeholder="Auto-populated from manager"
                     />
                   </div>
                 </div>
