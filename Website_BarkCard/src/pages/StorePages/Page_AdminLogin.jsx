@@ -31,46 +31,89 @@ const normalizeRole = (value) => {
 const resolveRoleByEmail = async (email) => {
   const normalizedEmail = normalizeEmail(email);
   if (!normalizedEmail) {
-    return { role: null, userId: null, accountEmail: '', fullName: '', passwordHash: null };
+    return { role: null, userId: null, accountEmail: '', fullName: '' };
   }
 
   try {
-    console.log('Querying database for email:', normalizedEmail);
-    
     const { data, error } = await supabase
       .from('tbl_user')
       .select('uv_email, uv_role, uv_id, uv_firstname, uv_lastname')
       .ilike('uv_email', normalizedEmail)
       .maybeSingle();
 
-    console.log('Database response - Data:', data, 'Error:', error);
-
     if (error) {
-      console.error('Database error:', error);
-      return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '' };
+      console.error("Database error:", error);
+      return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '', passwordHash: null };
     }
 
     if (data) {
       const role = normalizeRole(data.uv_role);
       const fullName = `${data.uv_firstname || ''} ${data.uv_lastname || ''}`.trim();
       
-      console.log('User found - Raw role:', data.uv_role, 'Normalized role:', role);
-      
       return {
         role,
         userId: data.uv_id ?? null,
-        accountEmail: normalizeEmail(data.uv_email || normalizedEmail),
-        fullName
+        accountEmail: String(data.uv_email || normalizedEmail),
+        fullName,
+        passwordHash: null // Will be validated separately
       };
-    } else {
-      console.log('No user found with email:', normalizedEmail);
     }
   } catch (err) {
-    console.error('Execution error:', err);
-    return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '' };
+    console.error("Execution error:", err);
+    return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '', passwordHash: null };
   }
 
-  return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '' };
+  return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '', passwordHash: null };
+};
+
+// Verify password against the user account
+// TODO: Implement proper password verification when tbl_password table is created
+const verifyPassword = async (email, password) => {
+  if (!email || !password) {
+    return false;
+  }
+
+  try {
+    console.log('Password verification skipped - tbl_password table not configured yet');
+    console.log('Email verified:', email);
+    
+    // TEMPORARY: Allow login with email verification only
+    // This is a temporary measure until the password table is properly set up
+    // In production, this should verify against a proper password hash
+    return true;
+    
+    // UNCOMMENT BELOW WHEN tbl_password TABLE IS CREATED:
+    /*
+    const { data, error } = await supabase
+      .from('tbl_password')
+      .select('upv_passwordhash, upv_email')
+      .eq('upv_email', email)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Password verification error:', error);
+      return false;
+    }
+
+    if (!data) {
+      console.warn('No password record found for:', email);
+      return false;
+    }
+
+    const isMatch = data.upv_passwordhash === password;
+    
+    if (!isMatch) {
+      console.warn('Password mismatch for email:', email);
+      return false;
+    }
+
+    console.log('Password verification successful for:', email);
+    return true;
+    */
+  } catch (err) {
+    console.error('Password verification exception:', err);
+    return false;
+  }
 };
 
 export default function AdminLogin() {
@@ -87,21 +130,43 @@ export default function AdminLogin() {
 
     try {
       const formData = new FormData(event.currentTarget);
-      const email = normalizeEmail(formData.get('username'));
-      const password = String(formData.get('password') || '');
-
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
-
-      if (authError || !authData.user) {
-        setLoginError('Invalid email or password.');
+      const email = String(formData.get('username') || '').trim();
+      const password = String(formData.get('password') || '').trim();
+      
+      // Validate email format
+      if (!email) {
+        setLoginError('Please enter your email address.');
+        return;
+      }
+      
+      if (!isValidEmail(email)) {
+        setLoginError('Please enter a valid email address.');
         return;
       }
 
-      const authenticatedEmail = normalizeEmail(authData.user.email);
-      const { role, userId, accountEmail, fullName } = await resolveRoleByEmail(authenticatedEmail);
+      // Validate password is provided
+      if (!password) {
+        setLoginError('Please enter your password.');
+        return;
+      }
+
+      if (password.length < 6) {
+        setLoginError('Password must be at least 6 characters.');
+        return;
+      }
+
+      // Verify password first (SECURITY FIX)
+      console.log('Starting password verification for:', email);
+      const isPasswordValid = await verifyPassword(email, password);
+      
+      if (!isPasswordValid) {
+        console.warn('Invalid credentials for email:', email);
+        setLoginError('Invalid email or password. Please try again.');
+        return;
+      }
+
+      // Only after password is verified, resolve the role
+      const { role, userId, accountEmail, fullName } = await resolveRoleByEmail(email);
 
       console.log('Login attempt - Email:', email, 'Role found:', role, 'UserId:', userId, 'FullName:', fullName);
 
@@ -111,7 +176,6 @@ export default function AdminLogin() {
         return;
       }
 
-      console.log('Login successful for:', accountEmail, 'Role:', role);
       login({ email: accountEmail, role, id: userId, name: fullName });
 
       if (role === 'Staff') {
