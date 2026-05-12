@@ -18,7 +18,8 @@ const GlobalStyles = () => (
       --shadow: 0 4px 20px rgba(0,0,0,0.08);
     }
 
-    body { background-color: var(--light-bg); color: var(--dark-text); padding: 1rem; }
+    /* REMOVED padding: 1rem AND ADDED margin: 0; padding: 0; */
+    body { background-color: var(--light-bg); color: var(--dark-text); margin: 0; padding: 0; }
 
     .window {
       background: white;
@@ -92,11 +93,18 @@ const GlobalStyles = () => (
 
 const money = (n) => `₱${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const ADMIN_EMAIL = "barkcard.adm1n@gmail.com";
-
 export default function AdminPage_UserManagement() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+
+  // Brand Colors
+  const colors = {
+    nuBlue: '#35408f',
+    nuGold: '#ffd700',
+    textTeal: '#007b8a',
+    cardBlue: '#337ab7',
+    bgGray: '#f8f9fa'
+  };
   
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -105,8 +113,6 @@ export default function AdminPage_UserManagement() {
   const [searchQuery, setSearchQuery] = useState("");
 
   // Modal states
-  const [showDepositModal, setShowDepositModal] = useState(false);
-  const [depositAmount, setDepositAmount] = useState("");
   const [showEditModal, setShowEditModal] = useState(false);
   const [editForm, setEditForm] = useState({});
   const [showRegModal, setShowRegModal] = useState(false);
@@ -148,7 +154,6 @@ export default function AdminPage_UserManagement() {
     try {
       setLoading(true);
       
-      // Fetch all users from tbl_user
       const { data: usersData, error: usersError } = await supabase
         .from('tbl_user')
         .select('uv_id, uv_lastname, uv_firstname, uv_middlename, uv_email, uv_role')
@@ -157,30 +162,21 @@ export default function AdminPage_UserManagement() {
       if (usersError) throw usersError;
 
       if (!usersData || usersData.length === 0) {
-        console.log('No users found in database');
         setUsers([]);
         return;
       }
 
-      console.log(`Fetched ${usersData.length} users from database`);
-
-      // Fetch all user balances
       const { data: balanceData, error: balanceError } = await supabase
-        .from('tbl_student_balance') // Updated table name
-        .select('uv_id, sv_balance'); // Removed nfcid, updated to sv_balance
-
-      // ADD THIS LINE:
-      console.log("🔥 BALANCE DATA FROM DB:", balanceData);
+        .from('tbl_student_balance')
+        .select('uv_id, sv_balance');
 
       if (balanceError) {
-        console.warn('Error fetching balances, continuing without balance data:', balanceError);
+        console.error('Error fetching balances:', balanceError);
       }
 
-      // Create a map of user IDs to balance info for quick lookup
       const balanceMap = {};
       if (balanceData) {
         balanceData.forEach(b => {
-          // Double check that it says b.sv_balance here!
           balanceMap[b.uv_id] = { 
             nfcId: "Unlinked", 
             amount: parseFloat(b.sv_balance) || 0 
@@ -188,7 +184,6 @@ export default function AdminPage_UserManagement() {
         });
       }
 
-      // Transform and merge user and balance data
       const transformedUsers = usersData.map(u => ({
         id: u.uv_id,
         lastName: u.uv_lastname || '',
@@ -200,7 +195,6 @@ export default function AdminPage_UserManagement() {
         balance: balanceMap[u.uv_id]?.amount || 0
       }));
 
-      console.log(`Transformed ${transformedUsers.length} users with balance information`);
       setUsers(transformedUsers);
     } catch (err) {
       console.error('Error fetching users:', err);
@@ -272,32 +266,6 @@ export default function AdminPage_UserManagement() {
     }
   };
 
-  const handleAdjustBalance = async () => {
-    const amount = parseFloat(depositAmount);
-    if (!selectedUser || isNaN(amount) || amount === 0) {
-      toast.error('Please enter a valid amount');
-      return;
-    }
-
-    try {
-      const newBalance = selectedUser.balance + amount;
-      const { error } = await supabase
-        .from('tbl_student_balance') // Updated table name
-        .update({ sv_balance: newBalance }) // Updated column name
-        .eq('uv_id', selectedUserId);
-
-      if (error) throw error;
-
-      setUsers(prev => prev.map(u => u.id === selectedUserId ? { ...u, balance: newBalance } : u));
-      toast.success(`Balance updated to ${money(newBalance)}`);
-      setShowDepositModal(false);
-      setDepositAmount("");
-      // eslint-disable-next-line no-unused-vars
-    } catch (_err) {
-      toast.error('Failed to update balance');
-    }
-  };
-
   const handleEditProfile = async () => {
     if (!selectedUser) return;
     try {
@@ -317,7 +285,7 @@ export default function AdminPage_UserManagement() {
       setUsers(prev => prev.map(u => u.id === selectedUserId ? { ...u, ...editForm } : u));
       toast.success('Profile updated successfully');
       setShowEditModal(false);
-      // eslint-disable-next-line no-unused-vars
+    // eslint-disable-next-line no-unused-vars
     } catch (_err) {
       toast.error('Failed to update profile');
     }
@@ -352,19 +320,57 @@ export default function AdminPage_UserManagement() {
   };
 
   return (
-    <div className="container-fluid">
+    <div style={{ backgroundColor: colors.bgGray, minHeight: '100vh', fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif' }}>
       <GlobalStyles />
-      <div className="window">
-        <div className="titlebar">
-          <span>🛡️</span>
-          <span>SuperAdmin: User & Balance Control</span>
-          <div className="ms-auto d-flex align-items-center gap-3">
-             <span className="small d-none d-md-inline opacity-75">{ADMIN_EMAIL}</span>
-             <button onClick={handleLogout} className="btn btn-sm btn-outline-light border-0">Logout</button>
+      
+      {/* Top Navbar */}
+      <nav className="navbar navbar-dark p-0" style={{ backgroundColor: colors.nuBlue, borderBottom: `4px solid ${colors.nuGold}` }}>
+        <div className="container-fluid d-flex justify-content-between align-items-center py-2 px-4">
+          <div className="d-flex align-items-center text-white gap-3">
+            <button 
+              onClick={() => navigate('/superadmin')}
+              className="btn btn-sm btn-light"
+              title="Back to Dashboard"
+            >
+              ← Back
+            </button>
+            <span className="fw-bold tracking-wider" style={{ fontSize: '1.1rem' }}>BarkCard Admin</span>
+          </div>
+          
+          <div className="d-flex align-items-center text-white gap-3">
+            <div className="text-end">
+              <span className="me-2 d-block">Hi, <span className="fw-bold">{user?.name || 'Admin'}</span></span>
+              <span className="small text-white-50">{user?.email || 'superadmin@barkcard.edu'}</span>
+            </div>
+            {/* Fixed the logout button to actually use the handleLogout function */}
+            <button 
+              onClick={handleLogout}
+              className="btn btn-sm btn-light text-danger fw-bold"
+              style={{ fontSize: '0.8rem' }}
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      <div className="container-fluid px-5 pt-4">
+        {/* Page Title */}
+        <h4 className="fw-bold mb-5" style={{ color: colors.textTeal }}>
+          User & Balance Management
+        </h4>
+
+        {/* Page Breadcrumb */}
+        <div className="d-flex justify-content-between align-items-center border-bottom pb-2 mb-5">
+          <div className="d-flex align-items-center">
+            <div className="p-2 rounded me-3" style={{ backgroundColor: colors.nuBlue, color: 'white' }}>
+              <i className="bi bi-people-fill" style={{ fontSize: '1.5rem' }}></i>
+            </div>
+            <h5 className="mb-0 fw-bold text-secondary">Users</h5>
           </div>
         </div>
 
-        <div className="p-4">
+        <div>
           <div className="filter-section">
             <h3 className="h6 fw-bold mb-3" style={{color: 'var(--primary-color)'}}>🔎 SEARCH DIRECTORY</h3>
             <div className="row g-3">
@@ -454,10 +460,6 @@ export default function AdminPage_UserManagement() {
                   <button className="xbtn xbtn-primary text-start" onClick={() => setShowRegModal(true)}>👤 New Registration</button>
                   <button className="xbtn text-start" disabled={!selectedUser} onClick={() => toast.info("NFC assignment coming soon")}>💳 Assign NFC ID</button>
                   <button className="xbtn text-start" disabled={!selectedUser} onClick={() => {
-                    setShowDepositModal(true);
-                    setDepositAmount("");
-                  }}>💵 Adjust Balance</button>
-                  <button className="xbtn text-start" disabled={!selectedUser} onClick={() => {
                     setEditForm({
                       firstName: selectedUser.firstName,
                       lastName: selectedUser.lastName,
@@ -500,7 +502,6 @@ export default function AdminPage_UserManagement() {
               </div>
               <form onSubmit={handleRegisterUser}>
                 <div className="modal-body p-4">
-                  {/* USER ID SECTION RESTRUCTURED */}
                   <div className="mb-4">
                     <div className="d-flex justify-content-between align-items-center mb-2">
                       <label className="form-label small fw-bold text-uppercase mb-0">User ID Assignment</label>
@@ -604,38 +605,6 @@ export default function AdminPage_UserManagement() {
                   <button type="submit" className="btn btn-primary px-4 fw-bold">CREATE USER</button>
                 </div>
               </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ADJUST BALANCE MODAL */}
-      {showDepositModal && (
-        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header bg-light">
-                <h5 className="modal-title fw-bold">💵 Adjust Balance</h5>
-                <button type="button" className="btn-close" onClick={() => setShowDepositModal(false)}></button>
-              </div>
-              <div className="modal-body">
-                <p className="small text-muted mb-2">User: <strong>{selectedUser?.firstName} {selectedUser?.lastName}</strong></p>
-                <p className="small text-muted mb-3">Current: <strong>{money(selectedUser?.balance || 0)}</strong></p>
-                <div className="input-group mb-3">
-                  <span className="input-group-text">₱</span>
-                  <input 
-                    type="number" 
-                    className="form-control form-control-lg" 
-                    placeholder="Example: 100 or -50"
-                    value={depositAmount} 
-                    onChange={(e) => setDepositAmount(e.target.value)} 
-                  />
-                </div>
-              </div>
-              <div className="modal-footer bg-light">
-                <button type="button" className="btn btn-secondary fw-bold" onClick={() => setShowDepositModal(false)}>CANCEL</button>
-                <button type="button" className="btn btn-primary fw-bold" onClick={handleAdjustBalance}>CONFIRM</button>
-              </div>
             </div>
           </div>
         </div>

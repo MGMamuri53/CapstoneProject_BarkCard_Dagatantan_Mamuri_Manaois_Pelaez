@@ -23,6 +23,11 @@ const Dashboard = () => {
   // Navigation Items - Icons removed as requested
   const navItems = [
     { 
+      title: 'Store Management', 
+      desc: 'Oversee store inventory, orders, and details.', 
+      path: '/superadmin/stores' 
+    },
+    { 
       title: 'User Management', 
       desc: 'Manage system users and permissions.', 
       path: '/superadmin/users' 
@@ -30,7 +35,7 @@ const Dashboard = () => {
     { 
       title: 'Reports', 
       desc: 'View and export system activity logs.', 
-      path: '/reports' 
+      path: '/superadmin/reports' 
     },
     { 
       title: 'Settings', 

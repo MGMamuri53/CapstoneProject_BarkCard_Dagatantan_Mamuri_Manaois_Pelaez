@@ -8,6 +8,7 @@ import AnalyticsStatistics from './pages/StorePages/Page_AnalyticsStatistics';
 import AdminLogin from './pages/StorePages/Page_AdminLogin';
 import SuperAdminDashboard from './pages/SuperAdminPages/Page_SuperAdminDashboard';
 import UserManagement from './pages/SuperAdminPages/Page_SuperAdminUserManagement';
+import SuperAdminReports from './pages/SuperAdminPages/Page_SuperAdminReports';
 import { initialOrders } from './data/orders';
 import { initialMenuItems } from './data/menuItems';
 import { useAuth } from './hooks/useAuth';
@@ -87,6 +88,14 @@ function App() {
           element={(
             <RequireSuperAdmin>
               <UserManagement />
+            </RequireSuperAdmin>
+          )}
+        />
+        <Route
+          path="/superadmin/reports"
+          element={(
+            <RequireSuperAdmin>
+              <SuperAdminReports />
             </RequireSuperAdmin>
           )}
         />
