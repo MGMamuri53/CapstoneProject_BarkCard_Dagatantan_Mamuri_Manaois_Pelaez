@@ -118,7 +118,7 @@ const StoreManagement = () => {
         .from('tbl_canteenstore')
         .insert([
           {
-            csv_id: parseInt(fullStoreId.replace('-', '')),
+            csv_id: fullStoreId,
             csv_name: formData.name,
             csv_location: formData.location,
             csv_manager: formData.manager,
@@ -139,7 +139,8 @@ const StoreManagement = () => {
       toast.success('Store added successfully');
     } catch (err) {
       console.error('Error adding store:', err);
-      toast.error('Failed to add store');
+      console.error('Error details:', err.message || err);
+      toast.error(`Failed to add store: ${err.message || 'Unknown error'}`);
     }
   };
 
