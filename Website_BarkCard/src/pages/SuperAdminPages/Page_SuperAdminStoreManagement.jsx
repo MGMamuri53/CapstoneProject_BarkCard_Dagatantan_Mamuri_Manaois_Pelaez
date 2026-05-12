@@ -4,6 +4,10 @@ import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../supabaseClient';
 import { toast } from 'react-toastify';
 
+const generateStoreId = () => {
+  return Math.floor(Math.random() * 999999) + 1;
+};
+
 const StoreManagement = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
@@ -84,10 +88,13 @@ const StoreManagement = () => {
         return;
       }
 
+      const storeId = generateStoreId();
+
       const { data, error } = await supabase
         .from('tbl_canteenstore')
         .insert([
           {
+            csv_id: storeId,
             csv_name: formData.name,
             csv_location: formData.location,
             csv_manager: formData.manager,
