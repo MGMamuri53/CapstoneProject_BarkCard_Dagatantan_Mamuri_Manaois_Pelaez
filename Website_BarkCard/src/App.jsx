@@ -11,10 +11,10 @@ import UserManagement from './pages/SuperAdminPages/Page_SuperAdminUserManagemen
 import { initialOrders } from './data/orders';
 import { initialMenuItems } from './data/menuItems';
 import { useAuth } from './hooks/useAuth';
+import { isSuperAdmin } from './utils/helpers';
 
 const isSuperAdminRole = (role) => {
-  const normalizedRole = String(role || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
-  return normalizedRole === 'superadmin' || normalizedRole === 'superadministrator';
+  return isSuperAdmin(role);
 };
 
 function ProtectLoginPage({ children }) {

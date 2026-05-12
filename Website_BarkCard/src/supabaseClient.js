@@ -1,7 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://tkayqwssbnhiddterycx.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRrYXlxd3NzYm5oaWRkdGVyeWN4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNTM1MzEsImV4cCI6MjA5MTkyOTUzMX0.wOVtvFccYhZPQdfETBFEvF_WM9XVj5rE-YxklJ6scD0';
+// Use environment variables instead of hardcoded credentials
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Missing Supabase environment variables. Please check your .env file.');
+}
 
 let supabaseInstance = null;
 

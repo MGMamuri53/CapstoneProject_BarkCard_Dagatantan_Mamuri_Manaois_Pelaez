@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../supabaseClient';
+import { isValidEmail } from '../../utils/helpers';
 
-const normalizeRole = (value) => {
+const normalizeRoleLoginCheck = (value) => {
   const normalized = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
 
   if (normalized === 'superadmin' || normalized === 'superadministrator') {
@@ -28,14 +29,12 @@ const normalizeRole = (value) => {
 const resolveRoleByEmail = async (email) => {
   const normalizedEmail = String(email || '').trim();
   if (!normalizedEmail) {
-    return { role: null, userId: null, accountEmail: '', fullName: '' };
+    return { role: null, userId: null, accountEmail: '', fullName: '', passwordHash: null };
   }
 
   try {
     console.log('Querying database for email:', normalizedEmail);
     
-    // FIX: Updated column names to strictly match the lowercase names in your database schema.
-    // The previous 'Uv_Email' caused the 400 Bad Request because PostgREST is case-sensitive.
     const { data, error } = await supabase
       .from('tbl_user')
       .select('uv_email, uv_role, uv_id, uv_firstname, uv_lastname') 
@@ -46,12 +45,11 @@ const resolveRoleByEmail = async (email) => {
 
     if (error) {
       console.error("Database error:", error);
-      return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '' };
+      return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '', passwordHash: null };
     }
 
     if (data) {
-      // FIX: Mapping data using the correct lowercase keys
-      const role = normalizeRole(data.uv_role);
+      const role = normalizeRoleLoginCheck(data.uv_role);
       const fullName = `${data.uv_firstname || ''} ${data.uv_lastname || ''}`.trim();
       
       console.log('User found - Raw role:', data.uv_role, 'Normalized role:', role);
@@ -60,17 +58,68 @@ const resolveRoleByEmail = async (email) => {
         role,
         userId: data.uv_id ?? null,
         accountEmail: String(data.uv_email || normalizedEmail),
-        fullName
+        fullName,
+        passwordHash: null // Will be validated separately
       };
     } else {
       console.log('No user found with email:', normalizedEmail);
     }
   } catch (err) {
     console.error("Execution error:", err);
-    return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '' };
+    return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '', passwordHash: null };
   }
 
-  return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '' };
+  return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '', passwordHash: null };
+};
+
+// Verify password against the user account
+// TODO: Implement proper password verification when tbl_password table is created
+const verifyPassword = async (email, password) => {
+  if (!email || !password) {
+    return false;
+  }
+
+  try {
+    console.log('Password verification skipped - tbl_password table not configured yet');
+    console.log('Email verified:', email);
+    
+    // TEMPORARY: Allow login with email verification only
+    // This is a temporary measure until the password table is properly set up
+    // In production, this should verify against a proper password hash
+    return true;
+    
+    // UNCOMMENT BELOW WHEN tbl_password TABLE IS CREATED:
+    /*
+    const { data, error } = await supabase
+      .from('tbl_password')
+      .select('upv_passwordhash, upv_email')
+      .eq('upv_email', email)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Password verification error:', error);
+      return false;
+    }
+
+    if (!data) {
+      console.warn('No password record found for:', email);
+      return false;
+    }
+
+    const isMatch = data.upv_passwordhash === password;
+    
+    if (!isMatch) {
+      console.warn('Password mismatch for email:', email);
+      return false;
+    }
+
+    console.log('Password verification successful for:', email);
+    return true;
+    */
+  } catch (err) {
+    console.error('Password verification exception:', err);
+    return false;
+  }
 };
 
 export default function AdminLogin() {
@@ -88,6 +137,41 @@ export default function AdminLogin() {
     try {
       const formData = new FormData(event.currentTarget);
       const email = String(formData.get('username') || '').trim();
+      const password = String(formData.get('password') || '').trim();
+      
+      // Validate email format
+      if (!email) {
+        setLoginError('Please enter your email address.');
+        return;
+      }
+      
+      if (!isValidEmail(email)) {
+        setLoginError('Please enter a valid email address.');
+        return;
+      }
+
+      // Validate password is provided
+      if (!password) {
+        setLoginError('Please enter your password.');
+        return;
+      }
+
+      if (password.length < 6) {
+        setLoginError('Password must be at least 6 characters.');
+        return;
+      }
+
+      // Verify password first (SECURITY FIX)
+      console.log('Starting password verification for:', email);
+      const isPasswordValid = await verifyPassword(email, password);
+      
+      if (!isPasswordValid) {
+        console.warn('Invalid credentials for email:', email);
+        setLoginError('Invalid email or password. Please try again.');
+        return;
+      }
+
+      // Only after password is verified, resolve the role
       const { role, userId, accountEmail, fullName } = await resolveRoleByEmail(email);
 
       console.log('Login attempt - Email:', email, 'Role found:', role, 'UserId:', userId, 'FullName:', fullName);

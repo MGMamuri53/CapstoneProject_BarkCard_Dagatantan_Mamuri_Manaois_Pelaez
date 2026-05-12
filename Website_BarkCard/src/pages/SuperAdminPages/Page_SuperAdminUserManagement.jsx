@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -149,35 +148,57 @@ export default function AdminPage_UserManagement() {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      
+      // Fetch all users from tbl_user
+      const { data: usersData, error: usersError } = await supabase
         .from('tbl_user')
-        .select(`
-          uv_id,
-          uv_lastname,
-          uv_firstname,
-          uv_middlename,
-          uv_email,
-          uv_role,
-          tbl_userbalance (ubv_nfcid, ubv_amount)
-        `);
+        .select('uv_id, uv_lastname, uv_firstname, uv_middlename, uv_email, uv_role')
+        .order('uv_lastname', { ascending: true });
 
-      if (error) throw error;
+      if (usersError) throw usersError;
 
-      const transformedUsers = data.map(u => ({
+      if (!usersData || usersData.length === 0) {
+        console.log('No users found in database');
+        setUsers([]);
+        return;
+      }
+
+      console.log(`Fetched ${usersData.length} users from database`);
+
+      // Fetch all user balances
+      const { data: balanceData, error: balanceError } = await supabase
+        .from('tbl_userbalance')
+        .select('uv_id, ubv_nfcid, ubv_amount');
+
+      if (balanceError) {
+        console.warn('Error fetching balances, continuing without balance data:', balanceError);
+      }
+
+      // Create a map of user IDs to balance info for quick lookup
+      const balanceMap = {};
+      if (balanceData) {
+        balanceData.forEach(b => {
+          balanceMap[b.uv_id] = { nfcId: b.ubv_nfcid, amount: b.ubv_amount };
+        });
+      }
+
+      // Transform and merge user and balance data
+      const transformedUsers = usersData.map(u => ({
         id: u.uv_id,
-        lastName: u.uv_lastname,
-        firstName: u.uv_firstname,
+        lastName: u.uv_lastname || '',
+        firstName: u.uv_firstname || '',
         middleName: u.uv_middlename || '',
-        email: u.uv_email,
-        role: u.uv_role,
-        nfcId: u.tbl_userbalance?.[0]?.ubv_nfcid || "Unlinked",
-        balance: u.tbl_userbalance?.[0]?.ubv_amount || 0
+        email: u.uv_email || '',
+        role: u.uv_role || 'Student',
+        nfcId: balanceMap[u.uv_id]?.nfcId || "Unlinked",
+        balance: balanceMap[u.uv_id]?.amount || 0
       }));
 
+      console.log(`Transformed ${transformedUsers.length} users with balance information`);
       setUsers(transformedUsers);
     } catch (err) {
       console.error('Error fetching users:', err);
-      toast.error('Failed to load users');
+      toast.error('Failed to load users: ' + (err.message || 'Unknown error'));
     } finally {
       setLoading(false);
     }
@@ -242,7 +263,8 @@ export default function AdminPage_UserManagement() {
       toast.success(`Balance updated to ${money(newBalance)}`);
       setShowDepositModal(false);
       setDepositAmount("");
-    } catch (err) {
+      // eslint-disable-next-line no-unused-vars
+    } catch (_err) {
       toast.error('Failed to update balance');
     }
   };
@@ -266,7 +288,8 @@ export default function AdminPage_UserManagement() {
       setUsers(prev => prev.map(u => u.id === selectedUserId ? { ...u, ...editForm } : u));
       toast.success('Profile updated successfully');
       setShowEditModal(false);
-    } catch (err) {
+      // eslint-disable-next-line no-unused-vars
+    } catch (_err) {
       toast.error('Failed to update profile');
     }
   };
