@@ -3,13 +3,13 @@ import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
 
-const categoryOptions = ['All Categories', 'Main Course', 'Beverages'];
+const categoryOptions = ['All Categories', 'Meals', 'Snacks', 'Drinks', 'Other'];
 
 const defaultFormData = {
   SPv_RefNum: '',
   SPv_Name: '',
   SPv_Description: '',
-  SPv_Category: 'Main Course',
+  SPv_Category: 'Meals',
   SPv_Price: '',
   SPv_Quantity: '',
   SPv_IMG: ''
@@ -34,8 +34,8 @@ const mapStoreProductToMenuItem = (product, fallbackValues = {}) => ({
   CSv_ID: product.csv_id ?? fallbackValues.CSv_ID ?? 1,
   SPv_RefNum: product.spv_refnum ?? fallbackValues.SPv_RefNum ?? '',
   SPv_Name: product.spv_name ?? fallbackValues.SPv_Name ?? '',
-  SPv_Description: fallbackValues.SPv_Description ?? '',
-  SPv_Category: fallbackValues.SPv_Category ?? 'Main Course',
+  SPv_Description: product.spv_description ?? fallbackValues.SPv_Description ?? '',
+  SPv_Category: fallbackValues.SPv_Category ?? 'Meals',
   SPv_Price: Number(product.spv_price ?? fallbackValues.SPv_Price ?? 0),
   SPv_Quantity: Number(product.spv_quantity ?? fallbackValues.SPv_Quantity ?? 0),
   SPv_IMG: product.spv_img ?? fallbackValues.SPv_IMG ?? ''
@@ -116,6 +116,7 @@ export default function MenuManagement({ menuItems, setMenuItems, refreshMenuIte
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [storeId, setStoreId] = useState(null);
+  const [isRefreshingMenu, setIsRefreshingMenu] = useState(false);
 
   useEffect(() => {
     if (!refreshMenuItems) return;
@@ -229,6 +230,19 @@ export default function MenuManagement({ menuItems, setMenuItems, refreshMenuIte
     setImagePreview(defaultPreview);
     setSubmitError('');
     setIsModalOpen(true);
+  };
+
+  const handleRefreshMenu = async () => {
+    if (!refreshMenuItems) return;
+
+    setIsRefreshingMenu(true);
+    try {
+      await refreshMenuItems();
+    } catch (error) {
+      console.error('Error refreshing menu items manually:', error);
+    } finally {
+      setIsRefreshingMenu(false);
+    }
   };
 
   const updatePreviewFromUrl = (url) => {
@@ -424,6 +438,7 @@ export default function MenuManagement({ menuItems, setMenuItems, refreshMenuIte
       spv_img: fallbackValues.SPv_IMG,
       spv_refnum: fallbackValues.SPv_RefNum,
       spv_name: fallbackValues.SPv_Name,
+      spv_description: fallbackValues.SPv_Description,
       spv_quantity: fallbackValues.SPv_Quantity,
       spv_price: fallbackValues.SPv_Price
     };
@@ -434,7 +449,7 @@ export default function MenuManagement({ menuItems, setMenuItems, refreshMenuIte
           .from('tbl_storeproducts')
           .update(productPayload)
           .eq('spv_id', editingItemId)
-          .select('spv_id, csv_id, spv_img, spv_refnum, spv_name, spv_quantity, spv_price')
+          .select('spv_id, csv_id, spv_img, spv_refnum, spv_name, spv_description, spv_quantity, spv_price')
           .single();
 
         if (error) {
@@ -447,7 +462,7 @@ export default function MenuManagement({ menuItems, setMenuItems, refreshMenuIte
         const { data, error } = await supabase
           .from('tbl_storeproducts')
           .insert(productPayload)
-          .select('spv_id, csv_id, spv_img, spv_refnum, spv_name, spv_quantity, spv_price')
+          .select('spv_id, csv_id, spv_img, spv_refnum, spv_name, spv_description, spv_quantity, spv_price')
           .single();
 
         if (error) {
@@ -516,11 +531,10 @@ export default function MenuManagement({ menuItems, setMenuItems, refreshMenuIte
                       onChange={handleInputChange}
                       className="form-select"
                     >
-                      <option>Main Course</option>
-                      <option>Sides</option>
-                      <option>Beverages</option>
-                      <option>Desserts</option>
-                      <option>Breakfast</option>
+                      <option>Meals</option>
+                      <option>Snacks</option>
+                      <option>Drinks</option>
+                      <option>Other</option>
                     </select>
                   </div>
                   <div className="col-md-4">
@@ -641,10 +655,21 @@ export default function MenuManagement({ menuItems, setMenuItems, refreshMenuIte
           <h2 className="display-5 fw-bold mb-1">Menu Management</h2>
           <p className="text-secondary small mb-0">Manage campus culinary offerings and inventory levels.</p>
         </div>
-        <button onClick={openAddModal} className="btn btn-primary d-flex align-items-center gap-2" type="button">
-          <span className="material-symbols-outlined">add</span>
-          <span>Add New Item</span>
-        </button>
+        <div className="d-flex flex-wrap gap-2">
+          <button
+            onClick={handleRefreshMenu}
+            className="btn btn-outline-primary d-flex align-items-center gap-2"
+            type="button"
+            disabled={!refreshMenuItems || isRefreshingMenu}
+          >
+            <span className="material-symbols-outlined">{isRefreshingMenu ? 'progress_activity' : 'refresh'}</span>
+            <span>{isRefreshingMenu ? 'Refreshing...' : 'Refresh Menu'}</span>
+          </button>
+          <button onClick={openAddModal} className="btn btn-primary d-flex align-items-center gap-2" type="button">
+            <span className="material-symbols-outlined">add</span>
+            <span>Add New Item</span>
+          </button>
+        </div>
       </header>
 
       <div className="bg-light rounded-2 p-4 mb-5">
@@ -682,6 +707,7 @@ export default function MenuManagement({ menuItems, setMenuItems, refreshMenuIte
             <thead className="table-light">
               <tr>
                 <th className="text-uppercase small fw-bold text-secondary">Item Details</th>
+                <th className="text-uppercase small fw-bold text-secondary">Description</th>
                 <th className="text-uppercase small fw-bold text-secondary">Category</th>
                 <th className="text-uppercase small fw-bold text-secondary text-end">Price</th>
                 <th className="text-uppercase small fw-bold text-secondary text-center">Stock</th>
@@ -702,10 +728,10 @@ export default function MenuManagement({ menuItems, setMenuItems, refreshMenuIte
                         </div>
                         <div>
                           <p className={`fw-bold mb-1 ${stockMeta.nameClass}`}>{item.SPv_Name}</p>
-                          <p className="small text-secondary mb-0">{item.SPv_Description}</p>
                         </div>
                       </div>
                     </td>
+                    <td className="py-4 small text-secondary">{item.SPv_Description}</td>
                     <td className="py-4 small text-secondary">{item.SPv_Category}</td>
                     <td className="py-4 small fw-bold text-end">{formatPrice(item.SPv_Price)}</td>
                     <td className="py-4 text-center">
@@ -732,7 +758,7 @@ export default function MenuManagement({ menuItems, setMenuItems, refreshMenuIte
               })}
               {filteredItems.length === 0 && (
                 <tr>
-                  <td colSpan="6" className="py-5 text-center small text-secondary">
+                  <td colSpan="7" className="py-5 text-center small text-secondary">
                     No menu items found for {activeCategory}.
                   </td>
                 </tr>

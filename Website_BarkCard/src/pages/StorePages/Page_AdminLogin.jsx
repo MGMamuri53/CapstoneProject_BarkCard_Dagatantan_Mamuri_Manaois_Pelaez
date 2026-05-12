@@ -34,11 +34,17 @@ const resolveRoleByEmail = async (email) => {
   }
 
   try {
+    console.log('Querying database for email:', normalizedEmail);
+    
+    // FIX: Updated column names to strictly match the lowercase names in your database schema.
+    // The previous 'Uv_Email' caused the 400 Bad Request because PostgREST is case-sensitive.
     const { data, error } = await supabase
       .from('tbl_user')
       .select('uv_email, uv_role, uv_id, uv_firstname, uv_lastname')
       .ilike('uv_email', normalizedEmail)
       .maybeSingle();
+
+    console.log('Database response - Data:', data, 'Error:', error);
 
     if (error) {
       console.error('Database error:', error);
@@ -48,12 +54,17 @@ const resolveRoleByEmail = async (email) => {
     if (data) {
       const role = normalizeRole(data.uv_role);
       const fullName = `${data.uv_firstname || ''} ${data.uv_lastname || ''}`.trim();
+      
+      console.log('User found - Raw role:', data.uv_role, 'Normalized role:', role);
+      
       return {
         role,
         userId: data.uv_id ?? null,
         accountEmail: normalizeEmail(data.uv_email || normalizedEmail),
         fullName
       };
+    } else {
+      console.log('No user found with email:', normalizedEmail);
     }
   } catch (err) {
     console.error('Execution error:', err);
@@ -93,21 +104,25 @@ export default function AdminLogin() {
       const authenticatedEmail = normalizeEmail(authData.user.email);
       const { role, userId, accountEmail, fullName } = await resolveRoleByEmail(authenticatedEmail);
 
+      console.log('Login attempt - Email:', email, 'Role found:', role, 'UserId:', userId, 'FullName:', fullName);
+
       if (!role) {
         await supabase.auth.signOut();
         setLoginError('There is no account associated with that email, or you do not have admin access.');
         return;
       }
 
+      console.log('Login successful for:', accountEmail, 'Role:', role);
       login({ email: accountEmail, role, id: userId, name: fullName });
 
       if (role === 'Staff') {
-        navigate('/staff');
+        navigate('/dashboard');
         return;
       }
 
       navigate('/dashboard');
-    } catch {
+    } catch (err) {
+      console.error('Login error:', err);
       setLoginError('Unable to validate account right now. Please try again.');
     } finally {
       setIsSubmitting(false);
@@ -196,8 +211,6 @@ export default function AdminLogin() {
                     </button>
                   </div>
                 </div>
-
-                
 
                 <button className="btn btn-primary w-100 fw-bold py-3 rounded-3" type="submit">
                   {isSubmitting ? 'Checking account...' : null}
