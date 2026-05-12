@@ -169,6 +169,9 @@ export default function AdminPage_UserManagement() {
         .from('tbl_student_balance') // Updated table name
         .select('uv_id, sv_balance'); // Removed nfcid, updated to sv_balance
 
+      // ADD THIS LINE:
+      console.log("🔥 BALANCE DATA FROM DB:", balanceData);
+
       if (balanceError) {
         console.warn('Error fetching balances, continuing without balance data:', balanceError);
       }
@@ -177,8 +180,11 @@ export default function AdminPage_UserManagement() {
       const balanceMap = {};
       if (balanceData) {
         balanceData.forEach(b => {
-          // Hardcode NFC ID as "Unlinked" since it's not in the database yet, map sv_balance to amount
-          balanceMap[b.uv_id] = { nfcId: "Unlinked", amount: b.sv_balance };
+          // Double check that it says b.sv_balance here!
+          balanceMap[b.uv_id] = { 
+            nfcId: "Unlinked", 
+            amount: parseFloat(b.sv_balance) || 0 
+          };
         });
       }
 
@@ -467,7 +473,7 @@ export default function AdminPage_UserManagement() {
                   {selectedUser && (
                      <div className="p-3 rounded border bg-light shadow-sm">
                         <h6 className="mb-2 fw-bold text-primary" style={{fontSize: '0.85rem'}}>Selected Record</h6>
-                        <div className="small"><strong>Name:</strong> {selectedUser.firstName}</div>
+                        <div className="small"><strong>Name:</strong> {selectedUser.lastName}, {selectedUser.firstName}</div>
                         <div className="small"><strong>ID:</strong> {selectedUser.id}</div>
                         <div className="small mt-2">
                           <span className={`badge ${selectedUser.role === 'Hold' ? 'bg-danger' : 'bg-success'}`}>
