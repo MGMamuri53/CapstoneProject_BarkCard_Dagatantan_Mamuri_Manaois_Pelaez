@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../supabaseClient';
@@ -23,6 +23,25 @@ const StoreManagement = () => {
     phone: '',
     email: ''
   });
+
+  // State variables for the store ID generation
+  const [idYear, setIdYear] = useState(new Date().getFullYear().toString());
+  const [idNumber, setIdNumber] = useState("");
+
+  // Memoized array of years for the dropdown (from 2022 to the current year)
+  const years = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    let arr = [];
+    for (let i = 2022; i <= currentYear; i++) arr.push(i.toString());
+    return arr;
+  }, []);
+
+  // Function to generate a random 9-digit sequence (6-digit timestamp + 3-digit random number)
+  const generateRandomSequence = () => {
+    const timestamp = Date.now().toString().slice(-6);
+    const random = Math.floor(100 + Math.random() * 899);
+    setIdNumber(`${timestamp}${random}`);
+  };
 
   // Brand Colors
   const colors = {
@@ -88,13 +107,18 @@ const StoreManagement = () => {
         return;
       }
 
-      const storeId = generateStoreId();
+      if (!idYear || !idNumber) {
+        toast.error('Please complete the Store ID assignment');
+        return;
+      }
+
+      const fullStoreId = `${idYear}-${idNumber}`;
 
       const { data, error } = await supabase
         .from('tbl_canteenstore')
         .insert([
           {
-            csv_id: storeId,
+            csv_id: parseInt(fullStoreId.replace('-', '')),
             csv_name: formData.name,
             csv_location: formData.location,
             csv_manager: formData.manager,
@@ -109,6 +133,8 @@ const StoreManagement = () => {
 
       await fetchStores();
       setFormData({ name: '', location: '', manager: '', phone: '', email: '' });
+      setIdNumber("");
+      setIdYear(new Date().getFullYear().toString());
       setShowAddModal(false);
       toast.success('Store added successfully');
     } catch (err) {
@@ -224,6 +250,8 @@ const StoreManagement = () => {
           <button 
             onClick={() => {
               setFormData({ name: '', location: '', manager: '', phone: '', email: '' });
+              setIdNumber("");
+              setIdYear(new Date().getFullYear().toString());
               setShowAddModal(true);
             }}
             className="btn btn-primary fw-bold"
@@ -297,10 +325,47 @@ const StoreManagement = () => {
             <div className="modal-content border-0 shadow">
               <div className="modal-header" style={{ backgroundColor: colors.cardBlue, borderBottom: 'none' }}>
                 <h5 className="modal-title fw-bold text-white">Add New Store</h5>
-                <button type="button" className="btn-close btn-close-white" onClick={() => setShowAddModal(false)}></button>
+                <button type="button" className="btn-close btn-close-white" onClick={() => {
+                  setShowAddModal(false);
+                  setIdNumber("");
+                  setIdYear(new Date().getFullYear().toString());
+                }}></button>
               </div>
               <form onSubmit={handleAddStore}>
                 <div className="modal-body p-4">
+                  <div className="mb-4">
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <label className="form-label small fw-bold text-uppercase mb-0">Store ID Assignment</label>
+                      <button 
+                        type="button" 
+                        className="btn btn-sm btn-outline-primary fw-bold" 
+                        onClick={generateRandomSequence}
+                        style={{ fontSize: '0.75rem' }}
+                      >
+                        🎲 Random
+                      </button>
+                    </div>
+                    <div className="input-group">
+                      <select 
+                        className="form-select fw-bold" 
+                        style={{ maxWidth: '110px' }} 
+                        value={idYear} 
+                        onChange={(e) => setIdYear(e.target.value)}
+                      >
+                        {years.map(y => <option key={y} value={y}>{y}</option>)}
+                      </select>
+                      <span className="input-group-text fw-bold">-</span>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        placeholder="Sequence" 
+                        required 
+                        value={idNumber} 
+                        onChange={(e) => setIdNumber(e.target.value)} 
+                      />
+                    </div>
+                  </div>
+
                   <div className="mb-3">
                     <label className="form-label fw-bold">Store Name *</label>
                     <input
@@ -353,7 +418,11 @@ const StoreManagement = () => {
                   </div>
                 </div>
                 <div className="modal-footer bg-light px-4">
-                  <button type="button" className="btn btn-secondary fw-bold" onClick={() => setShowAddModal(false)}>Cancel</button>
+                  <button type="button" className="btn btn-secondary fw-bold" onClick={() => {
+                    setShowAddModal(false);
+                    setIdNumber("");
+                    setIdYear(new Date().getFullYear().toString());
+                  }}>Cancel</button>
                   <button type="submit" className="btn btn-primary fw-bold">Add Store</button>
                 </div>
               </form>
