@@ -45,38 +45,29 @@ const StoreManagement = () => {
   const fetchStores = async () => {
     try {
       setLoading(true);
-      // TODO: Replace with actual Supabase stores table when available
-      // For now, using mock data
-      const mockStores = [
-        {
-          id: 1,
-          name: 'North Campus Dining Hall',
-          location: 'Building A',
-          manager: 'John Smith',
-          phone: '(555) 123-4567',
-          email: 'north.dining@barkcard.edu',
-          status: 'Active'
-        },
-        {
-          id: 2,
-          name: 'South Campus Cafe',
-          location: 'Building B',
-          manager: 'Maria Garcia',
-          phone: '(555) 234-5678',
-          email: 'south.cafe@barkcard.edu',
-          status: 'Active'
-        },
-        {
-          id: 3,
-          name: 'Library Snack Station',
-          location: 'Library Ground Floor',
-          manager: 'David Lee',
-          phone: '(555) 345-6789',
-          email: 'library.snacks@barkcard.edu',
-          status: 'Active'
-        }
-      ];
-      setStores(mockStores);
+      const { data, error } = await supabase
+        .from('tbl_canteenstore')
+        .select('csv_id, csv_name, csv_location, csv_manager, csv_phone, csv_email, csv_status, csv_createdat')
+        .order('csv_name', { ascending: true });
+
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        setStores([]);
+        return;
+      }
+
+      const formattedStores = data.map(store => ({
+        id: store.csv_id,
+        name: store.csv_name || '',
+        location: store.csv_location || '',
+        manager: store.csv_manager || '',
+        phone: store.csv_phone || '',
+        email: store.csv_email || '',
+        status: store.csv_status || 'Active'
+      }));
+
+      setStores(formattedStores);
     } catch (err) {
       console.error('Error fetching stores:', err);
       toast.error('Failed to load stores');
@@ -93,14 +84,23 @@ const StoreManagement = () => {
         return;
       }
 
-      // TODO: Add store to Supabase when table is available
-      const newStore = {
-        id: Math.max(...stores.map(s => s.id), 0) + 1,
-        ...formData,
-        status: 'Active'
-      };
+      const { data, error } = await supabase
+        .from('tbl_canteenstore')
+        .insert([
+          {
+            csv_name: formData.name,
+            csv_location: formData.location,
+            csv_manager: formData.manager,
+            csv_phone: formData.phone,
+            csv_email: formData.email,
+            csv_status: 'Active'
+          }
+        ])
+        .select();
 
-      setStores([...stores, newStore]);
+      if (error) throw error;
+
+      await fetchStores();
       setFormData({ name: '', location: '', manager: '', phone: '', email: '' });
       setShowAddModal(false);
       toast.success('Store added successfully');
@@ -118,12 +118,20 @@ const StoreManagement = () => {
         return;
       }
 
-      // TODO: Update store in Supabase when table is available
-      const updatedStores = stores.map(s =>
-        s.id === selectedStore.id ? { ...selectedStore, ...formData } : s
-      );
+      const { error } = await supabase
+        .from('tbl_canteenstore')
+        .update({
+          csv_name: formData.name,
+          csv_location: formData.location,
+          csv_manager: formData.manager,
+          csv_phone: formData.phone,
+          csv_email: formData.email
+        })
+        .eq('csv_id', selectedStore.id);
 
-      setStores(updatedStores);
+      if (error) throw error;
+
+      await fetchStores();
       setFormData({ name: '', location: '', manager: '', phone: '', email: '' });
       setShowEditModal(false);
       setSelectedStore(null);
@@ -137,8 +145,14 @@ const StoreManagement = () => {
   const handleDeleteStore = async (storeId) => {
     if (window.confirm('Are you sure you want to delete this store?')) {
       try {
-        // TODO: Delete from Supabase when table is available
-        setStores(stores.filter(s => s.id !== storeId));
+        const { error } = await supabase
+          .from('tbl_canteenstore')
+          .delete()
+          .eq('csv_id', storeId);
+
+        if (error) throw error;
+
+        await fetchStores();
         setSelectedStore(null);
         toast.success('Store deleted successfully');
       } catch (err) {
