@@ -87,13 +87,24 @@ const StoreManagement = () => {
     }
   };
 
-  const handleManagerSelect = (ownerId) => {
-    const selectedOwner = owners.find(o => o.uv_id === ownerId);
+  // UPDATED: Finds the owner by their full name to properly populate the email
+  const handleManagerSelect = (selectedName) => {
+    const selectedOwner = owners.find(
+      o => `${o.uv_firstname} ${o.uv_lastname}` === selectedName
+    );
+    
     if (selectedOwner) {
       setFormData({
         ...formData,
-        manager: `${selectedOwner.uv_firstname} ${selectedOwner.uv_lastname}`,
+        manager: selectedName,
         email: selectedOwner.uv_email
+      });
+    } else {
+      // If reset/empty
+      setFormData({
+        ...formData,
+        manager: selectedName,
+        email: ''
       });
     }
   };
@@ -266,10 +277,16 @@ const StoreManagement = () => {
     return true;
   };
 
+  // UPDATED: Restrict input to digits only, and max 11 characters
   const handlePhoneChange = (value) => {
-    setFormData({ ...formData, phone: value });
-    if (value) {
-      validatePhoneNumber(value);
+    // Replace non-digits with an empty string
+    const numericValue = value.replace(/\D/g, '');
+    // Limit to 11 digits
+    const truncatedValue = numericValue.slice(0, 11);
+
+    setFormData({ ...formData, phone: truncatedValue });
+    if (truncatedValue) {
+      validatePhoneNumber(truncatedValue);
     } else {
       setPhoneError("");
     }
@@ -487,6 +504,8 @@ const StoreManagement = () => {
                       placeholder="e.g., Building A"
                     />
                   </div>
+                  
+                  {/* UPDATED Manager Dropdown */}
                   <div className="mb-3">
                     <label className="form-label fw-bold">Store Manager *</label>
                     <select
@@ -496,13 +515,17 @@ const StoreManagement = () => {
                       required
                     >
                       <option value="">-- Select Store Manager --</option>
-                      {owners.map(owner => (
-                        <option key={owner.uv_id} value={owner.uv_id}>
-                          {owner.uv_firstname} {owner.uv_lastname}
-                        </option>
-                      ))}
+                      {owners.map(owner => {
+                        const fullName = `${owner.uv_firstname} ${owner.uv_lastname}`;
+                        return (
+                          <option key={owner.uv_id} value={fullName}>
+                            {fullName}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
+                  
                   <div className="mb-3">
                     <label className="form-label fw-bold">Phone</label>
                     <input
@@ -568,15 +591,27 @@ const StoreManagement = () => {
                       onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                     />
                   </div>
+                  
+                  {/* UPDATED Manager Dropdown (Was an input text field previously) */}
                   <div className="mb-3">
                     <label className="form-label fw-bold">Store Manager</label>
-                    <input
-                      type="text"
-                      className="form-control"
+                    <select
+                      className="form-select"
                       value={formData.manager}
-                      onChange={(e) => setFormData({ ...formData, manager: e.target.value })}
-                    />
+                      onChange={(e) => handleManagerSelect(e.target.value)}
+                    >
+                      <option value="">-- Select Store Manager --</option>
+                      {owners.map(owner => {
+                        const fullName = `${owner.uv_firstname} ${owner.uv_lastname}`;
+                        return (
+                          <option key={owner.uv_id} value={fullName}>
+                            {fullName}
+                          </option>
+                        );
+                      })}
+                    </select>
                   </div>
+                  
                   <div className="mb-3">
                     <label className="form-label fw-bold">Phone</label>
                     <input
