@@ -118,7 +118,7 @@ const StoreManagement = () => {
         .from('tbl_canteenstore')
         .insert([
           {
-            csv_id: fullStoreId,
+            csv_id: parseInt(fullStoreId.replace('-', '')),
             csv_name: formData.name,
             csv_location: formData.location,
             csv_manager: formData.manager,
