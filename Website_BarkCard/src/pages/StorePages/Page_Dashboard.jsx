@@ -1,11 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import 'bootstrap/dist/css/bootstrap.min.css';
-<<<<<<< HEAD
-import { useAuth } from '../../hooks/useAuth'; // Adjust the import path as needed
-=======
 import { useAuth } from '../../hooks/useAuth';
->>>>>>> 5d7e629342455d7918e8fa4b27b671377fe062e6
 import { supabase } from '../../supabaseClient';
 
 const avatarBackgrounds = [
