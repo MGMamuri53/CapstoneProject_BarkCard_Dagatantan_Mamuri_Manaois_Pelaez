@@ -40,6 +40,15 @@ npm run build
 
 The website will connect to the server at `http://localhost:3001` automatically.
 
+### Environment Variables
+Create a `.env` file inside `nfc-server/` with:
+
+```bash
+SUPABASE_URL=your_supabase_url_here
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
+PORT=3001
+```
+
 ---
 
 ## Development Mode
@@ -54,6 +63,15 @@ This uses **nodemon** to watch for file changes.
 ---
 
 ## API Endpoints
+
+### `POST /api/auth/login`
+Verifies email and password using Supabase service-role access and returns the user's role/name for routing.
+
+### `POST /api/auth/store-password`
+Hashes and stores a user's password in `tbl_usercredentials`.
+
+### `POST /api/auth/migrate-passwords`
+Hashes any plain-text values already present in `tbl_usercredentials`.
 
 ### `GET /api/nfc/read`
 Returns the currently detected card UID (if any).

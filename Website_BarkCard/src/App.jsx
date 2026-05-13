@@ -10,6 +10,7 @@ import SuperAdminDashboard from './pages/SuperAdminPages/Page_SuperAdminDashboar
 import UserManagement from './pages/SuperAdminPages/Page_SuperAdminUserManagement';
 import SuperAdminReports from './pages/SuperAdminPages/Page_SuperAdminReports';
 import StoreManagement from './pages/SuperAdminPages/Page_SuperAdminStoreManagement';
+import MigratePasswordsPage from './pages/MigratePasswordsPage';
 import { initialOrders } from './data/orders';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './supabaseClient';
@@ -152,6 +153,7 @@ function App() {
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
+        <Route path="/migrate-passwords" element={<MigratePasswordsPage />} />
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route
           path="/login"

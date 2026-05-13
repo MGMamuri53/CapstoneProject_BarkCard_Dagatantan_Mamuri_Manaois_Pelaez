@@ -81,10 +81,45 @@ export default function Dashboard({ menuItems = [] }) {
   const [isLoading, setIsLoading] = useState(true);
   const [storeId, setStoreId] = useState(null);
   const [storeName, setStoreName] = useState('');
+  const [cart, setCart] = useState([]);
+  const [showCart, setShowCart] = useState(false);
 
   console.log('[Dashboard] === OWNER DASHBOARD INITIALIZATION ===');
   console.log('[Dashboard] User role:', user?.role);
   console.log('[Dashboard] User email:', user?.email);
+
+  // Shopping Cart Functions
+  const addToCart = (item) => {
+    const existingItem = cart.find(cartItem => cartItem.spv_id === item.spv_id);
+    if (existingItem) {
+      setCart(cart.map(cartItem =>
+        cartItem.spv_id === item.spv_id
+          ? { ...cartItem, quantity: cartItem.quantity + 1 }
+          : cartItem
+      ));
+    } else {
+      setCart([...cart, { ...item, quantity: 1 }]);
+    }
+  };
+
+  const removeFromCart = (itemId) => {
+    setCart(cart.filter(cartItem => cartItem.spv_id !== itemId));
+  };
+
+  const updateCartQuantity = (itemId, quantity) => {
+    if (quantity <= 0) {
+      removeFromCart(itemId);
+    } else {
+      setCart(cart.map(cartItem =>
+        cartItem.spv_id === itemId
+          ? { ...cartItem, quantity }
+          : cartItem
+      ));
+    }
+  };
+
+  const cartTotal = cart.reduce((total, item) => total + (parseAmount(item.spv_price) * item.quantity), 0);
+  const cartItemsCount = cart.reduce((count, item) => count + item.quantity, 0);
 
   // Fetch Owner's store
   useEffect(() => {
@@ -286,6 +321,16 @@ export default function Dashboard({ menuItems = [] }) {
             <span className="material-symbols-outlined">list_alt</span>
             View All Orders
           </button>
+
+          <button onClick={() => setShowCart(!showCart)} className="btn btn-info btn-sm d-flex align-items-center gap-2 position-relative">
+            <span className="material-symbols-outlined">shopping_cart</span>
+            Shopping Cart
+            {cartItemsCount > 0 && (
+              <span className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                {cartItemsCount}
+              </span>
+            )}
+          </button>
           
           {/* OWNER ONLY: Add New Item */}
           {user?.role === 'Owner' && (
@@ -412,6 +457,116 @@ export default function Dashboard({ menuItems = [] }) {
           )}
         </div>
       </div>
+
+      {/* Shopping Cart Modal */}
+      {showCart && (
+        <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1050 }}>
+          <div className="modal-dialog modal-lg modal-dialog-scrollable">
+            <div className="modal-content border-0">
+              <div className="modal-header bg-info text-white">
+                <h5 className="modal-title fw-bold d-flex align-items-center gap-2">
+                  <span className="material-symbols-outlined">shopping_cart</span>
+                  Shopping Cart
+                </h5>
+                <button type="button" className="btn-close btn-close-white" onClick={() => setShowCart(false)}></button>
+              </div>
+              <div className="modal-body">
+                {cart.length === 0 ? (
+                  <div className="text-center py-5">
+                    <span className="material-symbols-outlined text-muted" style={{fontSize: '48px'}}>shopping_cart</span>
+                    <p className="text-muted mt-3">Your cart is empty</p>
+                    <p className="text-muted small">Click on menu items below to add them to your cart</p>
+                  </div>
+                ) : (
+                  <div>
+                    {cart.map(item => (
+                      <div key={item.spv_id} className="d-flex justify-content-between align-items-center mb-3 p-3 border rounded bg-light">
+                        <div className="flex-grow-1">
+                          <div className="fw-bold">{item.spv_name}</div>
+                          <div className="text-muted small">{formatAmount(item.spv_price)} each</div>
+                        </div>
+                        <div className="d-flex align-items-center gap-2">
+                          <button 
+                            className="btn btn-sm btn-outline-secondary"
+                            onClick={() => updateCartQuantity(item.spv_id, item.quantity - 1)}
+                          >
+                            −
+                          </button>
+                          <span className="px-2 fw-bold">{item.quantity}</span>
+                          <button 
+                            className="btn btn-sm btn-outline-secondary"
+                            onClick={() => updateCartQuantity(item.spv_id, item.quantity + 1)}
+                          >
+                            +
+                          </button>
+                          <span className="fw-bold ms-2" style={{minWidth: '80px', textAlign: 'right'}}>
+                            {formatAmount(parseAmount(item.spv_price) * item.quantity)}
+                          </span>
+                          <button 
+                            className="btn btn-sm btn-outline-danger ms-2"
+                            onClick={() => removeFromCart(item.spv_id)}
+                          >
+                            <span className="material-symbols-outlined" style={{fontSize: '18px'}}>delete</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <hr />
+
+                <div className="p-3 bg-light rounded mb-3">
+                  <div className="d-flex justify-content-between mb-2">
+                    <span>Subtotal:</span>
+                    <span>{formatAmount(cartTotal)}</span>
+                  </div>
+                  <div className="d-flex justify-content-between fw-bold fs-5">
+                    <span>Total:</span>
+                    <span className="text-primary">{formatAmount(cartTotal)}</span>
+                  </div>
+                </div>
+
+                <div className="mb-3">
+                  <h6 className="fw-bold mb-3">Add Items to Cart</h6>
+                  <div className="row g-2">
+                    {menuItems.length > 0 ? (
+                      menuItems.map(item => (
+                        <div key={item.spv_id} className="col-sm-6">
+                          <div className="card h-100 border-light">
+                            <div className="card-body p-2">
+                              <h6 className="card-title small fw-bold mb-1">{item.spv_name}</h6>
+                              <p className="card-text small text-muted mb-2">{formatAmount(item.spv_price)}</p>
+                              <button 
+                                className="btn btn-sm btn-primary w-100"
+                                onClick={() => addToCart(item)}
+                              >
+                                <span className="material-symbols-outlined me-1" style={{fontSize: '16px'}}>add_shopping_cart</span>
+                                Add
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="col-12">
+                        <p className="text-muted text-center py-3">No menu items available</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setShowCart(false)}>Close</button>
+                <button className="btn btn-primary" disabled={cart.length === 0}>
+                  <span className="material-symbols-outlined me-1" style={{fontSize: '18px'}}>done</span>
+                  Checkout
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* History Modal */}
       {isHistoryOpen && (

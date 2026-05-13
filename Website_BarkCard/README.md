@@ -54,6 +54,7 @@ cp .env.example .env
 # Edit .env with your Supabase credentials
 # VITE_SUPABASE_URL=your_supabase_url
 # VITE_SUPABASE_ANON_KEY=your_anon_key
+# VITE_API_BASE_URL=http://localhost:3001
 ```
 
 3. **Install NFC Server dependencies**
@@ -87,6 +88,11 @@ npm run build
 npm run preview
 # Preview production build locally
 ```
+
+### Authentication Flow
+- Frontend login now calls the backend auth API at `VITE_API_BASE_URL`
+- The backend uses the Supabase service-role key to read and write `tbl_usercredentials`
+- This keeps password hashes out of the browser and avoids RLS failures
 
 ## Project Structure
 

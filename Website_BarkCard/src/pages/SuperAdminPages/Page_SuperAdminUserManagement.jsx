@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 import { supabase } from "../../supabaseClient";
 import { useAuth } from "../../hooks/useAuth";
 import { waitForCardTap, extractNFCId } from "../../utils/nfcHelper";
+import { storePasswordHash } from "../../utils/passwordUtils";
 
 // --- Custom Styled Component Styles ---
 const GlobalStyles = () => (
@@ -134,7 +135,8 @@ export default function AdminPage_UserManagement() {
     uv_lastname: "",
     uv_firstname: "",
     uv_middlename: "",
-    uv_role: "Student"
+    uv_role: "Student",
+    uv_password: ""
   });
 
   const years = useMemo(() => {
@@ -235,6 +237,25 @@ export default function AdminPage_UserManagement() {
     setIdNumber(`${timestamp}${random}`);
   };
 
+  const generateRandomPassword = () => {
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+    const numbers = '0123456789';
+    const special = '!@#$%^&*';
+    const allChars = letters + numbers + special;
+    let password = '';
+    // Ensure at least one letter, one number, and one special char
+    password += letters.charAt(Math.floor(Math.random() * letters.length));
+    password += numbers.charAt(Math.floor(Math.random() * numbers.length));
+    password += special.charAt(Math.floor(Math.random() * special.length));
+    // Fill remaining with random chars
+    for (let i = 0; i < 9; i++) {
+      password += allChars.charAt(Math.floor(Math.random() * allChars.length));
+    }
+    // Shuffle password
+    password = password.split('').sort(() => Math.random() - 0.5).join('');
+    setRegForm({...regForm, uv_password: password});
+  };
+
   // Generate email from student ID (remove dashes and add @outlook.com)
   const generateEmailFromId = (year, number) => {
     if (!year || !number) return '';
@@ -256,6 +277,11 @@ export default function AdminPage_UserManagement() {
         return;
       }
 
+      if (!regForm.uv_password) {
+        toast.error('Please enter or generate a password');
+        return;
+      }
+
       const fullUserId = `${idYear}-${idNumber}`;
       const generatedEmail = generateEmailFromId(idYear, idNumber);
 
@@ -272,6 +298,9 @@ export default function AdminPage_UserManagement() {
       const { error: userErr } = await supabase.from('tbl_user').insert([finalData]);
       if (userErr) throw userErr;
 
+      // Hash and store password in tbl_usercredentials
+      await storePasswordHash(fullUserId, regForm.uv_password);
+
       // Use the correct table and omit the missing NFC column
       const { error: balErr } = await supabase.from('tbl_student_balance').insert([{
         uv_id: fullUserId,
@@ -284,7 +313,7 @@ export default function AdminPage_UserManagement() {
       
       setIdNumber("");
       setNoMiddleName(false);
-      setRegForm({ uv_lastname: "", uv_firstname: "", uv_middlename: "", uv_role: "Student" });
+      setRegForm({ uv_lastname: "", uv_firstname: "", uv_middlename: "", uv_role: "Student", uv_password: "" });
       fetchUsers();
     } catch (err) {
       toast.error(err.message || "Registration failed");
@@ -743,7 +772,10 @@ export default function AdminPage_UserManagement() {
                         placeholder="Sequence" 
                         required 
                         value={idNumber} 
-                        onChange={(e) => setIdNumber(e.target.value)} 
+                        onChange={(e) => {
+                          const numOnly = e.target.value.replace(/[^0-9]/g, '');
+                          setIdNumber(numOnly);
+                        }}
                       />
                     </div>
                   </div>
@@ -801,6 +833,30 @@ export default function AdminPage_UserManagement() {
                     </div>
                     <small className="text-muted d-block mt-1">
                       Generated as: {idYear}{idNumber.replace(/-/g, '')}@outlook.com
+                    </small>
+                  </div>
+                  <div className="mb-3">
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <label className="form-label small fw-bold text-uppercase mb-0">Password</label>
+                      <button 
+                        type="button" 
+                        className="btn btn-sm btn-outline-success fw-bold" 
+                        onClick={generateRandomPassword}
+                        style={{ fontSize: '0.75rem' }}
+                      >
+                        🔐 Generate
+                      </button>
+                    </div>
+                    <input 
+                      type="text" 
+                      className="form-control font-monospace" 
+                      placeholder="Password will be auto-generated or enter manually"
+                      value={regForm.uv_password} 
+                      onChange={(e) => setRegForm({...regForm, uv_password: e.target.value})}
+                      readOnly={false}
+                    />
+                    <small className="text-muted d-block mt-1">
+                      Click 'Generate' for a random password (letters + numbers + special chars)
                     </small>
                   </div>
                   <div className="mb-3">

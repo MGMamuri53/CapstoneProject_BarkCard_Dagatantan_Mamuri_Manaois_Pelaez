@@ -1,77 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { supabase } from '../../supabaseClient';
 import { isValidEmail } from '../../utils/helpers';
-
-const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
-
-const normalizeRole = (value) => {
-  const normalized = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
-
-  if (normalized === 'superadmin' || normalized === 'superadministrator') {
-    return 'SuperAdmin';
-  }
-
-  if (normalized === 'owner') {
-    return 'Owner';
-  }
-
-  if (normalized === 'staff') {
-    return 'Staff';
-  }
-
-  if (normalized === 'student') {
-    return 'Student';
-  }
-
-  return null;
-};
-
-const resolveRoleByEmail = async (email) => {
-  const normalizedEmail = normalizeEmail(email);
-  if (!normalizedEmail) {
-    return { role: null, userId: null, accountEmail: '', fullName: '' };
-  }
-
-  try {
-    const { data, error } = await supabase
-      .from('tbl_user')
-      .select('uv_email, uv_role, uv_id, uv_firstname, uv_lastname')
-      .ilike('uv_email', normalizedEmail)
-      .maybeSingle();
-
-    if (error) {
-      console.error("Database error:", error);
-      return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '' };
-    }
-
-    if (data) {
-      const role = normalizeRole(data.uv_role);
-      const fullName = `${data.uv_firstname || ''} ${data.uv_lastname || ''}`.trim();
-      
-      console.log('User found in tbl_user:', {
-        email: data.uv_email,
-        rawRole: data.uv_role,
-        normalizedRole: role,
-        userId: data.uv_id,
-        fullName
-      });
-      
-      return {
-        role,
-        userId: data.uv_id ?? null,
-        accountEmail: String(data.uv_email || normalizedEmail),
-        fullName
-      };
-    }
-  } catch (err) {
-    console.error("Execution error:", err);
-    return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '' };
-  }
-
-  return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '' };
-};
+import { verifyUserCredentials } from '../../utils/passwordUtils';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -107,25 +38,26 @@ export default function AdminLogin() {
         return;
       }
 
-      // Authenticate with Supabase Auth
       console.log('Login attempt for:', email);
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
+      const credentialCheck = await verifyUserCredentials(email, password);
       
-      if (authError || !authData.user) {
-        console.warn('Authentication failed for:', email);
-        setLoginError('Invalid email or password. Please try again.');
+      if (!credentialCheck?.ok) {
+        console.warn('Password verification failed for:', email);
+        if (credentialCheck?.reason === 'missing_credentials') {
+          setLoginError('No password record exists for this user in tbl_usercredentials.');
+        } else if (credentialCheck?.reason === 'server_error' || credentialCheck?.reason === 'credential_fetch_error') {
+          setLoginError('Authentication service is unavailable. Check the backend server and Supabase service role configuration.');
+        } else {
+          setLoginError('Invalid email or password. Please try again.');
+        }
         return;
       }
 
-      // After successful auth, fetch latest user details from tbl_user (ALWAYS FRESH)
-      console.log('=== LOGIN ROUTING ===');
-      console.log('Authenticated email:', authData.user.email);
-      
-      const { role, userId, accountEmail, fullName } = await resolveRoleByEmail(authData.user.email);
+      const { role, userId, email: accountEmail, fullName } = credentialCheck.user || {};
 
+      // After successful password verification, check role
+      console.log('=== LOGIN ROUTING ===');
+      console.log('Authenticated email:', accountEmail);
       console.log('Fetched role from tbl_user:', role);
       console.log('Login data:', { email: accountEmail, role, userId, fullName });
 
@@ -156,7 +88,6 @@ export default function AdminLogin() {
       console.log('✗ Role not allowed for web dashboard:', role);
       console.log('✗ Staff role is NO LONGER valid for canteen dashboard');
       console.log('✗ Only Owner and SuperAdmin can access web dashboard');
-      await supabase.auth.signOut();
       localStorage.clear();
       sessionStorage.clear();
       setLoginError('You do not have permission to access this dashboard.');
