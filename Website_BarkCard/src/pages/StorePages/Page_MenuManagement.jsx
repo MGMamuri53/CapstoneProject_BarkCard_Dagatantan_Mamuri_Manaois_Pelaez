@@ -31,7 +31,7 @@ const DEFAULT_PREVIEW_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent(
 
 const mapStoreProductToMenuItem = (product, fallbackValues = {}) => ({
   SPv_ID: product.spv_id,
-  CSv_ID: product.csv_id ?? fallbackValues.CSv_ID ?? 1,
+  CSv_ID: product.csv_id ?? fallbackValues.CSv_ID,
   SPv_RefNum: product.spv_refnum ?? fallbackValues.SPv_RefNum ?? '',
   SPv_Name: product.spv_name ?? fallbackValues.SPv_Name ?? '',
   SPv_Description: product.spv_description ?? fallbackValues.SPv_Description ?? '',
@@ -129,70 +129,48 @@ export default function MenuManagement({ menuItems, setMenuItems, refreshMenuIte
   useEffect(() => {
     const fetchStoreId = async () => {
       try {
-        const authUserId = String(currentAuthUser?.id || '').trim();
         const authEmail = String(currentAuthUser?.email || '').trim().toLowerCase();
 
-        console.log('Auth context user:', currentAuthUser);
-        console.log('Auth user id:', authUserId);
-        console.log('Auth email:', authEmail);
+        console.log('[MenuManagement] Auth context user:', currentAuthUser);
+        console.log('[MenuManagement] Auth email:', authEmail);
 
-        let resolvedUvId = authUserId;
-
-        if (!resolvedUvId && !authEmail) {
+        if (!authEmail) {
+          console.error('[MenuManagement] No email found');
           setStoreId(null);
           return;
         }
 
-        if (!resolvedUvId && authEmail) {
-          const { data: userRow, error: userError } = await supabase
-            .from('tbl_user')
-            .select('uv_id, uv_email')
-            .ilike('uv_email', authEmail)
-            .maybeSingle();
-
-          console.log('Fetched tbl_user row:', userRow);
-          console.log('tbl_user error:', userError);
-
-          if (userError) {
-            throw userError;
-          }
-
-          resolvedUvId = String(userRow?.uv_id || '').trim();
-        }
-
-        console.log('Resolved uv_id:', resolvedUvId);
-
-        if (!resolvedUvId) {
-          setStoreId(null);
-          return;
-        }
-
-        const { data: stores, error: storeError } = await supabase
+        console.log('[MenuManagement] Fetching store for email:', authEmail);
+        const { data: store, error: storeError } = await supabase
           .from('tbl_canteenstore')
-          .select('csv_id, csv_name, uv_id');
+          .select('csv_id, csv_name')
+          .eq('csv_email', authEmail)
+          .maybeSingle();
 
-        console.log('All canteen stores:', stores);
-        console.log('Canteen store error:', storeError);
+        console.log('[MenuManagement] Store query result:', store);
+        console.log('[MenuManagement] Store query error:', storeError);
 
         if (storeError) {
           throw storeError;
         }
 
-        const matchedStore = stores?.find(
-          (store) => String(store?.uv_id || '').trim() === resolvedUvId
-        );
-
-        console.log('Fetched canteen store:', matchedStore ?? null);
-
-        setStoreId(matchedStore?.csv_id ?? null);
+        if (store) {
+          console.log('[MenuManagement] Store resolved - csv_id:', store.csv_id);
+          setStoreId(store.csv_id);
+        } else {
+          console.error('[MenuManagement] No store found for email:', authEmail);
+          setStoreId(null);
+        }
       } catch (error) {
-        console.error('Error fetching canteen store for current user:', error);
+        console.error('[MenuManagement] Error fetching canteen store:', error);
         setStoreId(null);
       }
     };
 
-    fetchStoreId();
-  }, [currentAuthUser?.email, currentAuthUser?.id]);
+    if (currentAuthUser?.email) {
+      fetchStoreId();
+    }
+  }, [currentAuthUser?.email]);
 
   const filteredItems = menuItems.filter((item) => {
     const categoryMatch = activeCategory === 'All Categories' || item.SPv_Category === activeCategory;
@@ -443,8 +421,14 @@ export default function MenuManagement({ menuItems, setMenuItems, refreshMenuIte
       spv_price: fallbackValues.SPv_Price
     };
 
+    console.log('[MenuManagement] === PRODUCT SAVE ===');
+    console.log('[MenuManagement] Store csv_id:', storeId);
+    console.log('[MenuManagement] Product payload:', productPayload);
+    console.log('[MenuManagement] csv_id in payload:', productPayload.csv_id);
+
     try {
       if (editingItemId) {
+        console.log('[MenuManagement] Updating product spv_id:', editingItemId);
         const { data, error } = await supabase
           .from('tbl_storeproducts')
           .update(productPayload)
@@ -456,9 +440,16 @@ export default function MenuManagement({ menuItems, setMenuItems, refreshMenuIte
           throw error;
         }
 
+        console.log('[MenuManagement] Product updated:', data);
+        console.log('[MenuManagement] Updated csv_id:', data.csv_id);
         const updatedItem = mapStoreProductToMenuItem(data, fallbackValues);
         setMenuItems((prev) => prev.map((item) => (item.SPv_ID === editingItemId ? updatedItem : item)));
       } else {
+        console.log('[MenuManagement] === INSERTING NEW PRODUCT ===');
+        console.log('[MenuManagement] Insert payload (should NOT have spv_id):', productPayload);
+        console.log('[MenuManagement] Payload keys:', Object.keys(productPayload));
+        console.log('[MenuManagement] Has spv_id in payload?', 'spv_id' in productPayload);
+        
         const { data, error } = await supabase
           .from('tbl_storeproducts')
           .insert(productPayload)
@@ -466,9 +457,17 @@ export default function MenuManagement({ menuItems, setMenuItems, refreshMenuIte
           .single();
 
         if (error) {
+          console.error('[MenuManagement] Insert error:', error);
+          console.error('[MenuManagement] Error code:', error.code);
+          console.error('[MenuManagement] Error message:', error.message);
+          console.error('[MenuManagement] Error details:', error.details);
+          console.error('[MenuManagement] Error hint:', error.hint);
           throw error;
         }
 
+        console.log('[MenuManagement] Product inserted successfully:', data);
+        console.log('[MenuManagement] Inserted spv_id (auto-generated):', data.spv_id);
+        console.log('[MenuManagement] Inserted csv_id:', data.csv_id);
         const createdItem = mapStoreProductToMenuItem(data, fallbackValues);
         setMenuItems((prev) => [createdItem, ...prev]);
       }

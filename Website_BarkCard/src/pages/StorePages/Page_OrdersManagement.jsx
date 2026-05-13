@@ -89,48 +89,62 @@ export default function OrdersManagement() {
     return null;
   };
 
-  // Fetch staff store on component mount
   useEffect(() => {
     const fetchStaffStore = async () => {
       try {
-        const authUserId = String(currentAuthUser?.id || '').trim();
+        console.log('[OrderManagement] === OWNER-BASED STORE LOOKUP ===');
+        console.log('[OrderManagement] This page uses OWNER logic, NOT Staff logic');
+        console.log('[OrderManagement] Logged-in user:', currentAuthUser);
+        console.log('[OrderManagement] User role:', currentAuthUser?.role);
+        console.log('[OrderManagement] Owner email:', currentAuthUser?.email);
+        
+        if (currentAuthUser?.role !== 'Owner') {
+          console.error('[OrderManagement] ✗ User is not Owner! Role:', currentAuthUser?.role);
+          console.error('[OrderManagement] ✗ Only Owner role can access Order Management');
+          setStoreId(null);
+          setStoreName('Access Denied - Owner role required');
+          return;
+        }
+        
         const authEmail = String(currentAuthUser?.email || '').trim().toLowerCase();
 
-        let resolvedUvId = authUserId;
-
-        if (!resolvedUvId && authEmail) {
-          const { data: userRow } = await supabase
-            .from('tbl_user')
-            .select('uv_id')
-            .ilike('uv_email', authEmail)
-            .maybeSingle();
-          resolvedUvId = userRow?.uv_id;
-        }
-
-        if (!resolvedUvId) {
+        if (!authEmail) {
+          console.error('[OrderManagement] No email found, cannot fetch store');
           setStoreId(null);
           return;
         }
 
-        const { data: store } = await supabase
+        console.log('[OrderManagement] ✓ Owner role confirmed');
+        console.log('[OrderManagement] Fetching store using: tbl_canteenstore.csv_email =', authEmail);
+        const { data: store, error: storeError } = await supabase
           .from('tbl_canteenstore')
           .select('csv_id, csv_name')
-          .eq('uv_id', resolvedUvId)
+          .eq('csv_email', authEmail)
           .maybeSingle();
 
+        console.log('[OrderManagement] Store query result:', store);
+        console.log('[OrderManagement] Store query error:', storeError);
+
         if (store) {
+          console.log('[OrderManagement] ✓ Store resolved - csv_id:', store.csv_id, 'csv_name:', store.csv_name);
+          console.log('[OrderManagement] Orders will be filtered by: tbl_storeproducts.csv_id =', store.csv_id);
           setStoreId(store.csv_id);
           setStoreName(store.csv_name);
+        } else {
+          console.error('[OrderManagement] ✗ No store found for Owner email:', authEmail);
+          console.error('[OrderManagement] ✗ Owner must be assigned to a store in tbl_canteenstore');
+          setStoreId(null);
+          setStoreName('No store assigned');
         }
       } catch (err) {
-        console.error('Error fetching staff store:', err);
+        console.error('[OrderManagement] Error fetching staff store:', err);
       }
     };
 
-    if (currentAuthUser?.id || currentAuthUser?.email) {
+    if (currentAuthUser?.email) {
       fetchStaffStore();
     }
-  }, [currentAuthUser?.email, currentAuthUser?.id]);
+  }, [currentAuthUser?.email, currentAuthUser?.role]);
 
   // Auto-focus scan input when page loads or modal closes
   useEffect(() => {
@@ -195,7 +209,21 @@ export default function OrdersManagement() {
   const filteredOrders =
     selectedStatus === 'all'
       ? searchFilteredOrders
-      : searchFilteredOrders.filter((order) => normalizeStatus(order.Ov_Status) === normalizeStatus(selectedStatus));
+      : searchFilteredOrders.filter((order) => {
+          const orderStatus = normalizeStatus(order.Ov_Status);
+          const filterStatus = normalizeStatus(selectedStatus);
+          const match = orderStatus === filterStatus;
+          if (!match) {
+            console.log('[Filter] Order', order.Ov_ID, 'status:', orderStatus, 'does not match filter:', filterStatus);
+          }
+          return match;
+        });
+
+  console.log('[Filter] === STATUS FILTERING ===');
+  console.log('[Filter] Selected status filter:', selectedStatus);
+  console.log('[Filter] Total orders before filter:', searchFilteredOrders.length);
+  console.log('[Filter] Total orders after filter:', filteredOrders.length);
+  console.log('[Filter] Filtered out:', searchFilteredOrders.length - filteredOrders.length, 'orders');
 
   useEffect(() => {
     setCurrentPage(1);
@@ -265,138 +293,30 @@ export default function OrdersManagement() {
 
     setQrModalLoading(true);
     try {
-      console.log('[QR Checkout] Processing parsed ov_id:', ovId);
+      console.log('[QR Scan] === SCAN ORDER (NO DEDUCTION YET) ===');
+      console.log('[QR Scan] Scanned order ID:', ovId);
 
-      // Step 1: Fetch order from tbl_order by ov_id
-      const { data: orderData, error: orderError } = await supabase
-        .from('tbl_order')
-        .select('ov_id, uv_id, ov_totalamount, ov_status, ov_ispaid')
-        .eq('ov_id', ovId)
-        .maybeSingle();
-
-      if (orderError || !orderData) {
-        console.log('[QR Checkout] Order not found - ovId:', ovId);
-        throw new Error('Order not found');
-      }
-      console.log('[QR Checkout] Fetched order:', orderData);
-
-      const studentUvId = orderData.uv_id;
-      const totalAmount = parseFloat(orderData.ov_totalamount);
-      console.log('[QR Checkout] Student uv_id:', studentUvId, 'Total amount:', totalAmount);
-
-      // Step 2: Check if order already paid
-      if (orderData.ov_ispaid) {
-        console.log('[QR Checkout] Order already paid - ov_ispaid:', orderData.ov_ispaid);
-        alert('Order already paid. Cannot process again.');
-        setQrInput('');
-        return;
-      }
-
-      // Step 3: Fetch current student wallet balance from tbl_student_balance
-      const { data: balanceData, error: balanceError } = await supabase
-        .from('tbl_student_balance')
-        .select('sv_balance, sv_updated_at')
-        .eq('uv_id', studentUvId)
-        .maybeSingle();
-
-      if (balanceError || !balanceData) {
-        console.log('[QR Checkout] Balance record not found - uv_id:', studentUvId);
-        throw new Error('Student balance record not found.');
-      }
-      console.log('[QR Checkout] Fetched balance record:', balanceData);
-
-      const currentBalance = parseFloat(balanceData.sv_balance || 0);
-      console.log('[QR Checkout] Current balance:', currentBalance, 'Required:', totalAmount);
-
-      // Step 4: Check if balance is sufficient
-      if (currentBalance < totalAmount) {
-        console.log('[QR Checkout] INSUFFICIENT BALANCE - Required:', totalAmount, 'Available:', currentBalance);
-        alert(`Insufficient balance.\nRequired: ₱${totalAmount.toFixed(2)}\nAvailable: ₱${currentBalance.toFixed(2)}`);
-        setQrInput('');
-        return;
-      }
-
-      // Step 5: Update student balance in tbl_student_balance
-      const newBalance = currentBalance - totalAmount;
-      const { data: balanceUpdateData, error: balanceUpdateError } = await supabase
-        .from('tbl_student_balance')
-        .update({
-          sv_balance: newBalance,
-          sv_updated_at: new Date().toISOString()
-        })
-        .eq('uv_id', studentUvId)
-        .select();
-
-      console.log('[QR Checkout] Updated balance to:', newBalance, 'Result:', balanceUpdateData);
-      if (balanceUpdateError) {
-        console.error('[QR Checkout] Balance update error:', balanceUpdateError);
-        throw new Error('Failed to update balance: ' + balanceUpdateError.message);
-      }
-
-      // Step 6: Insert debit transaction for history
-      const { data: transactionData, error: transactionError } = await supabase
-        .from('tbl_transactions')
-        .insert({
-          uv_id: studentUvId,
-          tv_type: 'debit',
-          tv_amount: totalAmount,
-          tv_merchant: 'Canteen',
-          tv_description: `Canteen order payment - Order #${ovId}`
-        })
-        .select();
-
-      console.log('[QR Checkout] Inserted debit transaction:', transactionData);
-      if (transactionError) {
-        console.error('[QR Checkout] Transaction insert error:', transactionError);
-        throw new Error('Failed to insert transaction: ' + transactionError.message);
-      }
-
-      // Step 7: Update order status and payment
-      const { data: orderUpdateData, error: orderUpdateError } = await supabase
-        .from('tbl_order')
-        .update({
-          ov_status: 'Preparing',
-          ov_ispaid: true
-        })
-        .eq('ov_id', ovId)
-        .select();
-
-      console.log('[QR Checkout] Updated order:', orderUpdateData);
-      if (orderUpdateError) {
-        console.error('[QR Checkout] Order update error:', orderUpdateError);
-        throw new Error('Failed to update order: ' + orderUpdateError.message);
-      }
-
-      // Step 8: Fetch updated order for display
+      // Fetch order and validate it belongs to store
       const scannedOrder = await fetchOrderByQr(ovId);
-      console.log('[QR Checkout] Refreshed order data:', scannedOrder);
+      
+      if (!scannedOrder) {
+        console.error('[QR Scan] Order not found or does not belong to store');
+        throw new Error('Order not found or does not belong to your store');
+      }
+
+      console.log('[QR Scan] Order fetched successfully');
+      console.log('[QR Scan] Order ov_ispaid:', scannedOrder.Ov_IsPaid);
+      console.log('[QR Scan] Order status:', scannedOrder.Ov_Status);
+      console.log('[QR Scan] Order total:', scannedOrder.Ov_TotalAmount);
+      console.log('[QR Scan] Opening confirmation modal - NO balance deduction yet');
       
       setQrScannedOrder(scannedOrder);
       setIsQrModalOpen(true);
       setQrInput('');
-
-      // Show success message
-      alert(`✓ Order paid and moved to Preparing!\n\nDeducted: ₱${totalAmount.toFixed(2)}\nNew Balance: ₱${newBalance.toFixed(2)}`);
-
-      // Auto-close modal after 3 seconds
-      setTimeout(() => {
-        setIsQrModalOpen(false);
-      }, 3000);
-
-      // Step 9: Refresh order management table
-      await refetch();
-
-      // Refocus scan input for next scan
-      setTimeout(() => {
-        setQrInput('');
-        scanInputRef.current?.focus();
-        console.log('[QR Checkout] Input cleared and refocused for next scan');
-      }, 100);
     } catch (err) {
-      console.error('[QR Checkout] Error:', err.message || err);
-      alert(err.message || 'Order checkout failed. Please try again.');
+      console.error('[QR Scan] Error:', err.message || err);
+      alert(err.message || 'Failed to fetch order. Please try again.');
       setQrInput('');
-      // Refocus on error
       scanInputRef.current?.focus();
     } finally {
       setQrModalLoading(false);
@@ -407,11 +327,106 @@ export default function OrdersManagement() {
     if (!qrScannedOrder) return;
     setQrModalLoading(true);
     try {
-      await confirmPayment(qrScannedOrder.Ov_ID);
+      console.log('[QR Payment] === CONFIRM PAYMENT (DEDUCT BALANCE) ===');
+      console.log('[QR Payment] Order ID:', qrScannedOrder.Ov_ID);
+      console.log('[QR Payment] Order ov_ispaid before action:', qrScannedOrder.Ov_IsPaid);
+
+      // Check if already paid
+      if (qrScannedOrder.Ov_IsPaid) {
+        console.log('[QR Payment] Order already paid, skipping deduction');
+        alert('Order already paid.');
+        return;
+      }
+
+      const studentUvId = qrScannedOrder.Uv_ID;
+      const totalAmount = parseFloat(qrScannedOrder.Ov_TotalAmount);
+
+      console.log('[QR Payment] Student uv_id:', studentUvId);
+      console.log('[QR Payment] Order total:', totalAmount);
+
+      // Fetch current balance
+      const { data: balanceData, error: balanceError } = await supabase
+        .from('tbl_student_balance')
+        .select('sv_balance')
+        .eq('uv_id', studentUvId)
+        .maybeSingle();
+
+      if (balanceError || !balanceData) {
+        console.error('[QR Payment] Balance fetch error:', balanceError);
+        throw new Error('Student balance record not found');
+      }
+
+      const currentBalance = parseFloat(balanceData.sv_balance || 0);
+      console.log('[QR Payment] Current sv_balance:', currentBalance);
+
+      // Check sufficient balance
+      if (currentBalance < totalAmount) {
+        console.error('[QR Payment] INSUFFICIENT BALANCE');
+        console.error('[QR Payment] Required:', totalAmount, 'Available:', currentBalance);
+        throw new Error(`Insufficient balance.\nRequired: ₱${totalAmount.toFixed(2)}\nAvailable: ₱${currentBalance.toFixed(2)}`);
+      }
+
+      // Deduct balance
+      const newBalance = currentBalance - totalAmount;
+      console.log('[QR Payment] New sv_balance:', newBalance);
+
+      const { error: balanceUpdateError } = await supabase
+        .from('tbl_student_balance')
+        .update({
+          sv_balance: newBalance,
+          sv_updated_at: new Date().toISOString()
+        })
+        .eq('uv_id', studentUvId);
+
+      if (balanceUpdateError) {
+        console.error('[QR Payment] Balance update error:', balanceUpdateError);
+        throw new Error('Failed to update balance: ' + balanceUpdateError.message);
+      }
+
+      console.log('[QR Payment] ✓ Balance updated successfully');
+
+      // Insert transaction
+      const { error: transactionError } = await supabase
+        .from('tbl_transactions')
+        .insert({
+          uv_id: studentUvId,
+          tv_type: 'debit',
+          tv_amount: totalAmount,
+          tv_merchant: 'Canteen',
+          tv_description: `Canteen order payment - Order #${qrScannedOrder.Ov_ID}`
+        });
+
+      if (transactionError) {
+        console.error('[QR Payment] Transaction insert error:', transactionError);
+      } else {
+        console.log('[QR Payment] ✓ Transaction inserted');
+      }
+
+      // Update order
+      const { error: orderUpdateError } = await supabase
+        .from('tbl_order')
+        .update({
+          ov_ispaid: true
+        })
+        .eq('ov_id', qrScannedOrder.Ov_ID);
+
+      if (orderUpdateError) {
+        console.error('[QR Payment] Order update error:', orderUpdateError);
+        throw new Error('Failed to update order: ' + orderUpdateError.message);
+      }
+
+      console.log('[QR Payment] ✓ Order marked as paid');
+      console.log('[QR Payment] Deducted:', totalAmount, 'New balance:', newBalance);
+
+      // Refresh order
       const updatedOrder = await fetchOrderByQr(qrScannedOrder.Ov_ID);
       setQrScannedOrder(updatedOrder);
+      await refetch();
+
+      alert(`✓ Payment confirmed!\n\nDeducted: ₱${totalAmount.toFixed(2)}\nNew Balance: ₱${newBalance.toFixed(2)}`);
     } catch (err) {
-      alert('Failed to confirm payment');
+      console.error('[QR Payment] Error:', err.message || err);
+      alert(err.message || 'Failed to confirm payment');
     } finally {
       setQrModalLoading(false);
     }
@@ -421,18 +436,21 @@ export default function OrdersManagement() {
     if (!qrScannedOrder) return;
     setQrModalLoading(true);
     try {
-      console.log('[QR Mark Preparing] orderId:', qrScannedOrder.Ov_ID);
-      const { data, error } = await supabase
+      console.log('[QR Mark Preparing] === MARK PREPARING (STATUS ONLY) ===');
+      console.log('[QR Mark Preparing] Order ID:', qrScannedOrder.Ov_ID);
+      console.log('[QR Mark Preparing] Current status:', qrScannedOrder.Ov_Status);
+      
+      const { error } = await supabase
         .from('tbl_order')
-        .update({ ov_status: 'Preparing', ov_ispaid: true })
-        .eq('ov_id', Number(qrScannedOrder.Ov_ID))
-        .select();
+        .update({ ov_status: 'Preparing' })
+        .eq('ov_id', Number(qrScannedOrder.Ov_ID));
       
-      console.log('[QR Mark Preparing] newStatus: Preparing');
-      console.log('[QR Mark Preparing] updated result:', data);
-      console.log('[QR Mark Preparing] update error:', error);
+      if (error) {
+        console.error('[QR Mark Preparing] Update error:', error);
+        throw error;
+      }
       
-      if (error) throw error;
+      console.log('[QR Mark Preparing] ✓ Status updated to Preparing');
       
       const updatedOrder = await fetchOrderByQr(qrScannedOrder.Ov_ID);
       setQrScannedOrder(updatedOrder);
@@ -446,28 +464,230 @@ export default function OrdersManagement() {
   };
 
   const handleQrMarkCompleted = async () => {
-    if (!qrScannedOrder) return;
+    if (!qrScannedOrder) {
+      console.error('[Mark Complete] No order selected');
+      return;
+    }
+
     setQrModalLoading(true);
     try {
-      console.log('[QR Mark Completed] orderId:', qrScannedOrder.Ov_ID);
-      const { data, error } = await supabase
-        .from('tbl_order')
-        .update({ ov_status: 'Completed', ov_ispaid: true })
-        .eq('ov_id', Number(qrScannedOrder.Ov_ID))
+      console.log('[Mark Complete] ========================================');
+      console.log('[Mark Complete] === MARK COMPLETED (DEDUCT + UPDATE) ===');
+      console.log('[Mark Complete] ========================================');
+      
+      // Step 1: Get selected order details
+      console.log('[Mark Complete] Step 1: Get selected order');
+      const selectedOrderData = {
+        ov_id: qrScannedOrder.Ov_ID,
+        uv_id: qrScannedOrder.Uv_ID,
+        ov_totalamount: qrScannedOrder.Ov_TotalAmount,
+        ov_ispaid: qrScannedOrder.Ov_IsPaid
+      };
+      console.log('[Mark Complete] Selected order:', selectedOrderData);
+      console.log('[Mark Complete]   - Order ID (ov_id):', selectedOrderData.ov_id);
+      console.log('[Mark Complete]   - Student ID (uv_id):', selectedOrderData.uv_id);
+      console.log('[Mark Complete]   - Total Amount (ov_totalamount):', selectedOrderData.ov_totalamount);
+      console.log('[Mark Complete]   - Is Paid (ov_ispaid):', selectedOrderData.ov_ispaid);
+
+      // Step 2: Check if already paid
+      if (selectedOrderData.ov_ispaid) {
+        console.log('[Mark Complete] Step 2: Order already paid - STOPPING');
+        alert('Order already paid.');
+        return;
+      }
+      console.log('[Mark Complete] Step 2: Order not paid yet - proceeding with deduction');
+
+      // Step 3: Fetch student balance
+      console.log('[Mark Complete] Step 3: Fetch student balance from tbl_student_balance');
+      console.log('[Mark Complete]   Query: SELECT sv_balance FROM tbl_student_balance WHERE uv_id =', selectedOrderData.uv_id);
+      
+      const { data: balanceData, error: balanceError } = await supabase
+        .from('tbl_student_balance')
+        .select('sv_balance')
+        .eq('uv_id', selectedOrderData.uv_id)
+        .single();
+
+      console.log('[Mark Complete]   Balance query result:', balanceData);
+      console.log('[Mark Complete]   Balance query error:', balanceError);
+
+      if (balanceError || !balanceData) {
+        console.error('[Mark Complete] ERROR: Student balance record not found');
+        console.error('[Mark Complete]   Error details:', balanceError);
+        throw new Error('Student balance record not found');
+      }
+
+      const currentBalance = Number(balanceData.sv_balance);
+      console.log('[Mark Complete]   Current sv_balance:', currentBalance);
+
+      // Step 4: Compute new balance
+      console.log('[Mark Complete] Step 4: Compute new balance');
+      const orderTotal = Number(selectedOrderData.ov_totalamount);
+      const newBalance = currentBalance - orderTotal;
+      console.log('[Mark Complete]   Current balance:', currentBalance);
+      console.log('[Mark Complete]   Order total:', orderTotal);
+      console.log('[Mark Complete]   New balance:', newBalance);
+
+      // Step 5: Check sufficient balance
+      if (newBalance < 0) {
+        console.error('[Mark Complete] Step 5: INSUFFICIENT BALANCE - STOPPING');
+        console.error('[Mark Complete]   Required:', orderTotal);
+        console.error('[Mark Complete]   Available:', currentBalance);
+        console.error('[Mark Complete]   Shortfall:', Math.abs(newBalance));
+        throw new Error(`Insufficient balance.\nRequired: ₱${orderTotal.toFixed(2)}\nAvailable: ₱${currentBalance.toFixed(2)}`);
+      }
+      console.log('[Mark Complete] Step 5: Sufficient balance - proceeding');
+
+      // Step 6: Update student balance
+      console.log('[Mark Complete] Step 6: Update tbl_student_balance');
+      console.log('[Mark Complete]   UPDATE tbl_student_balance');
+      console.log('[Mark Complete]   SET sv_balance =', newBalance);
+      console.log('[Mark Complete]   SET sv_updated_at =', new Date().toISOString());
+      console.log('[Mark Complete]   WHERE uv_id =', selectedOrderData.uv_id);
+      
+      const { data: balanceUpdateData, error: balanceUpdateError } = await supabase
+        .from('tbl_student_balance')
+        .update({
+          sv_balance: newBalance,
+          sv_updated_at: new Date().toISOString(),
+        })
+        .eq('uv_id', selectedOrderData.uv_id)
         .select();
+
+      console.log('[Mark Complete] balance update data:', balanceUpdateData);
+      console.log('[Mark Complete] balance update error:', balanceUpdateError);
+
+      if (balanceUpdateError) {
+        console.error('[Mark Complete] ERROR: Failed to update balance');
+        console.error('[Mark Complete]   Error code:', balanceUpdateError.code);
+        console.error('[Mark Complete]   Error message:', balanceUpdateError.message);
+        console.error('[Mark Complete]   Error details:', balanceUpdateError.details);
+        console.error('[Mark Complete]   Error hint:', balanceUpdateError.hint);
+        console.error('[Mark Complete]   Full error object:', JSON.stringify(balanceUpdateError, null, 2));
+        
+        // Check if it's an RLS policy error
+        if (balanceUpdateError.code === '42501' || balanceUpdateError.message?.includes('policy')) {
+          console.error('[Mark Complete]   *** RLS POLICY ERROR DETECTED ***');
+          console.error('[Mark Complete]   The Owner role may not have permission to update tbl_student_balance');
+          console.error('[Mark Complete]   Please check Supabase RLS policies for tbl_student_balance table');
+        }
+        
+        throw new Error('Failed to update balance: ' + balanceUpdateError.message);
+      }
+
+      // Verify the update actually happened
+      console.log('[Mark Complete]   Verifying balance update...');
+      const { data: verifyBalance, error: verifyError } = await supabase
+        .from('tbl_student_balance')
+        .select('sv_balance')
+        .eq('uv_id', selectedOrderData.uv_id)
+        .single();
       
-      console.log('[QR Mark Completed] newStatus: Completed');
-      console.log('[QR Mark Completed] updated result:', data);
-      console.log('[QR Mark Completed] update error:', error);
+      console.log('[Mark Complete]   Verification query result:', verifyBalance);
+      console.log('[Mark Complete]   Verification query error:', verifyError);
       
-      if (error) throw error;
-      
-      const updatedOrder = await fetchOrderByQr(qrScannedOrder.Ov_ID);
+      if (verifyBalance) {
+        const verifiedBalance = Number(verifyBalance.sv_balance);
+        console.log('[Mark Complete]   Verified sv_balance from DB:', verifiedBalance);
+        console.log('[Mark Complete]   Expected sv_balance:', newBalance);
+        console.log('[Mark Complete]   Balance matches:', verifiedBalance === newBalance);
+        
+        if (verifiedBalance !== newBalance) {
+          console.error('[Mark Complete]   *** WARNING: Balance did not update! ***');
+          console.error('[Mark Complete]   Expected:', newBalance);
+          console.error('[Mark Complete]   Actual:', verifiedBalance);
+          throw new Error('Balance update verification failed. Balance did not change in database.');
+        }
+      }
+
+      console.log('[Mark Complete]   ✓ Balance updated successfully');
+      console.log('[Mark Complete]   ✓ Old balance:', currentBalance);
+      console.log('[Mark Complete]   ✓ New balance:', newBalance);
+      console.log('[Mark Complete]   ✓ Deducted:', orderTotal);
+
+      // Step 7: Insert debit transaction
+      console.log('[Mark Complete] Step 7: Insert debit transaction into tbl_transactions');
+      const transactionData = {
+        uv_id: selectedOrderData.uv_id,
+        tv_type: 'debit',
+        tv_amount: orderTotal,
+        tv_merchant: 'Canteen',
+        tv_description: `Canteen order payment - Order #${selectedOrderData.ov_id}`
+      };
+      console.log('[Mark Complete]   Transaction data:', transactionData);
+
+      const { data: transactionResult, error: transactionError } = await supabase
+        .from('tbl_transactions')
+        .insert(transactionData)
+        .select();
+
+      console.log('[Mark Complete]   Transaction insert result:', transactionResult);
+      console.log('[Mark Complete]   Transaction insert error:', transactionError);
+
+      if (transactionError) {
+        console.error('[Mark Complete] WARNING: Transaction insert failed (non-critical)');
+        console.error('[Mark Complete]   Error details:', transactionError);
+      } else {
+        console.log('[Mark Complete]   ✓ Transaction inserted successfully');
+      }
+
+      // Step 8: Update order status and payment
+      console.log('[Mark Complete] Step 8: Update tbl_order');
+      console.log('[Mark Complete]   UPDATE tbl_order');
+      console.log('[Mark Complete]   SET ov_ispaid = true, ov_status = Completed');
+      console.log('[Mark Complete]   WHERE ov_id =', selectedOrderData.ov_id);
+
+      const { data: orderUpdateData, error: orderUpdateError } = await supabase
+        .from('tbl_order')
+        .update({
+          ov_status: 'Completed',
+          ov_ispaid: true
+        })
+        .eq('ov_id', Number(selectedOrderData.ov_id))
+        .select();
+
+      console.log('[Mark Complete]   Order update result:', orderUpdateData);
+      console.log('[Mark Complete]   Order update error:', orderUpdateError);
+
+      if (orderUpdateError) {
+        console.error('[Mark Complete] ERROR: Failed to update order');
+        console.error('[Mark Complete]   Error details:', orderUpdateError);
+        throw new Error('Failed to update order: ' + orderUpdateError.message);
+      }
+
+      console.log('[Mark Complete]   ✓ Order status updated to Completed');
+      console.log('[Mark Complete]   ✓ Order marked as paid');
+
+      // Step 9: Refresh orders list
+      console.log('[Mark Complete] Step 9: Refresh orders list');
+      const updatedOrder = await fetchOrderByQr(selectedOrderData.ov_id);
       setQrScannedOrder(updatedOrder);
       await refetch();
+      console.log('[Mark Complete]   ✓ Orders list refreshed');
+
+      // Show success message
+      console.log('[Mark Complete] ========================================');
+      console.log('[Mark Complete] === SUCCESS ===');
+      console.log('[Mark Complete]   Order ID:', selectedOrderData.ov_id);
+      console.log('[Mark Complete]   Student ID:', selectedOrderData.uv_id);
+      console.log('[Mark Complete]   Deducted:', orderTotal);
+      console.log('[Mark Complete]   Old Balance:', currentBalance);
+      console.log('[Mark Complete]   New Balance:', newBalance);
+      console.log('[Mark Complete] ========================================');
+
+      alert(`✓ Order completed and paid!\n\nDeducted: ₱${orderTotal.toFixed(2)}\nNew Balance: ₱${newBalance.toFixed(2)}`);
+
+      // Auto-close modal after 2 seconds
+      setTimeout(() => {
+        setIsQrModalOpen(false);
+        scanInputRef.current?.focus();
+      }, 2000);
     } catch (err) {
-      console.error('[QR Mark Completed] Error:', err);
-      alert('Failed to update order status');
+      console.error('[Mark Complete] ========================================');
+      console.error('[Mark Complete] === FAILED ===');
+      console.error('[Mark Complete]   Error:', err.message || err);
+      console.error('[Mark Complete]   Stack:', err.stack);
+      console.error('[Mark Complete] ========================================');
+      alert(err.message || 'Failed to complete order');
     } finally {
       setQrModalLoading(false);
     }
@@ -495,11 +715,102 @@ export default function OrdersManagement() {
     setIsStatusUpdating(true);
     try {
       const normalizedNewStatus = String(newStatus || '').trim();
-
       console.log('[Order Status Change] normalizedNewStatus:', normalizedNewStatus);
 
       const shouldMarkPaid = normalizedNewStatus === 'Preparing' || normalizedNewStatus === 'Completed';
 
+      // Step 1: Fetch order details to check payment status and get student uv_id
+      const { data: orderData, error: orderFetchError } = await supabase
+        .from('tbl_order')
+        .select('ov_id, uv_id, ov_totalamount, ov_status, ov_ispaid')
+        .eq('ov_id', Number(orderId))
+        .maybeSingle();
+
+      if (orderFetchError || !orderData) {
+        console.error('[Order Status Change] Failed to fetch order:', orderFetchError);
+        throw new Error('Failed to fetch order details');
+      }
+
+      console.log('[Order Status Change] Order data:', orderData);
+      console.log('[Order Status Change] Current ov_ispaid:', orderData.ov_ispaid);
+      console.log('[Order Status Change] Should mark paid:', shouldMarkPaid);
+
+      // Step 2: If marking as paid and not already paid, deduct balance
+      if (shouldMarkPaid && !orderData.ov_ispaid) {
+        const studentUvId = orderData.uv_id;
+        const totalAmount = parseFloat(orderData.ov_totalamount);
+
+        console.log('[Order Status Change] === BALANCE DEDUCTION ===');
+        console.log('[Order Status Change] Order ID:', orderId);
+        console.log('[Order Status Change] Student uv_id:', studentUvId);
+        console.log('[Order Status Change] Order total:', totalAmount);
+
+        // Fetch current student balance
+        const { data: balanceData, error: balanceError } = await supabase
+          .from('tbl_student_balance')
+          .select('sv_balance, sv_updated_at')
+          .eq('uv_id', studentUvId)
+          .maybeSingle();
+
+        if (balanceError || !balanceData) {
+          console.error('[Order Status Change] Balance fetch error:', balanceError);
+          throw new Error('Student balance record not found');
+        }
+
+        const currentBalance = parseFloat(balanceData.sv_balance || 0);
+        console.log('[Order Status Change] Current sv_balance:', currentBalance);
+
+        // Check sufficient balance
+        if (currentBalance < totalAmount) {
+          console.error('[Order Status Change] INSUFFICIENT BALANCE');
+          console.error('[Order Status Change] Required:', totalAmount, 'Available:', currentBalance);
+          throw new Error(`Insufficient balance. Required: ₱${totalAmount.toFixed(2)}, Available: ₱${currentBalance.toFixed(2)}`);
+        }
+
+        // Deduct balance
+        const newBalance = currentBalance - totalAmount;
+        console.log('[Order Status Change] New sv_balance:', newBalance);
+
+        const { error: balanceUpdateError } = await supabase
+          .from('tbl_student_balance')
+          .update({
+            sv_balance: newBalance,
+            sv_updated_at: new Date().toISOString()
+          })
+          .eq('uv_id', studentUvId);
+
+        if (balanceUpdateError) {
+          console.error('[Order Status Change] Balance update error:', balanceUpdateError);
+          throw new Error('Failed to update balance: ' + balanceUpdateError.message);
+        }
+
+        console.log('[Order Status Change] ✓ Balance updated successfully');
+        console.log('[Order Status Change] Deducted:', totalAmount, 'New balance:', newBalance);
+
+        // Insert transaction record
+        const { error: transactionError } = await supabase
+          .from('tbl_transactions')
+          .insert({
+            uv_id: studentUvId,
+            tv_type: 'debit',
+            tv_amount: totalAmount,
+            tv_merchant: 'Canteen',
+            tv_description: `Canteen order payment - Order #${orderId}`
+          });
+
+        if (transactionError) {
+          console.error('[Order Status Change] Transaction insert error:', transactionError);
+          // Don't throw - transaction is for history only
+        } else {
+          console.log('[Order Status Change] ✓ Transaction record inserted');
+        }
+      } else if (orderData.ov_ispaid) {
+        console.log('[Order Status Change] Order already paid, skipping balance deduction');
+      } else {
+        console.log('[Order Status Change] Not marking as paid, skipping balance deduction');
+      }
+
+      // Step 3: Update order status
       const { data, error: updateError } = await supabase
         .from('tbl_order')
         .update({
@@ -509,8 +820,8 @@ export default function OrdersManagement() {
         .eq('ov_id', Number(orderId))
         .select('ov_id, ov_status, ov_ispaid');
 
-      console.log('[Order Status Change] updated data:', data);
-      console.log('[Order Status Change] update error:', updateError);
+      console.log('[Order Status Change] Order updated:', data);
+      console.log('[Order Status Change] Update error:', updateError);
 
       if (updateError) {
         throw updateError;

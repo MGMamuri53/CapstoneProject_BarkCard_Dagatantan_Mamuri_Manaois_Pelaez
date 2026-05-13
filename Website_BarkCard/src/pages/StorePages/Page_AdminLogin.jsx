@@ -43,77 +43,34 @@ const resolveRoleByEmail = async (email) => {
 
     if (error) {
       console.error("Database error:", error);
-      return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '', passwordHash: null };
+      return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '' };
     }
 
     if (data) {
       const role = normalizeRole(data.uv_role);
       const fullName = `${data.uv_firstname || ''} ${data.uv_lastname || ''}`.trim();
       
+      console.log('User found in tbl_user:', {
+        email: data.uv_email,
+        rawRole: data.uv_role,
+        normalizedRole: role,
+        userId: data.uv_id,
+        fullName
+      });
+      
       return {
         role,
         userId: data.uv_id ?? null,
         accountEmail: String(data.uv_email || normalizedEmail),
-        fullName,
-        passwordHash: null // Will be validated separately
+        fullName
       };
     }
   } catch (err) {
     console.error("Execution error:", err);
-    return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '', passwordHash: null };
+    return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '' };
   }
 
-  return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '', passwordHash: null };
-};
-
-// Verify password against the user account
-// TODO: Implement proper password verification when tbl_password table is created
-const verifyPassword = async (email, password) => {
-  if (!email || !password) {
-    return false;
-  }
-
-  try {
-    console.log('Password verification skipped - tbl_password table not configured yet');
-    console.log('Email verified:', email);
-    
-    // TEMPORARY: Allow login with email verification only
-    // This is a temporary measure until the password table is properly set up
-    // In production, this should verify against a proper password hash
-    return true;
-    
-    // UNCOMMENT BELOW WHEN tbl_password TABLE IS CREATED:
-    /*
-    const { data, error } = await supabase
-      .from('tbl_password')
-      .select('upv_passwordhash, upv_email')
-      .eq('upv_email', email)
-      .maybeSingle();
-
-    if (error) {
-      console.error('Password verification error:', error);
-      return false;
-    }
-
-    if (!data) {
-      console.warn('No password record found for:', email);
-      return false;
-    }
-
-    const isMatch = data.upv_passwordhash === password;
-    
-    if (!isMatch) {
-      console.warn('Password mismatch for email:', email);
-      return false;
-    }
-
-    console.log('Password verification successful for:', email);
-    return true;
-    */
-  } catch (err) {
-    console.error('Password verification exception:', err);
-    return false;
-  }
+  return { role: null, userId: null, accountEmail: normalizedEmail, fullName: '' };
 };
 
 export default function AdminLogin() {
@@ -150,40 +107,60 @@ export default function AdminLogin() {
         return;
       }
 
-      if (password.length < 6) {
-        setLoginError('Password must be at least 6 characters.');
-        return;
-      }
-
-      // Verify password first (SECURITY FIX)
-      console.log('Starting password verification for:', email);
-      const isPasswordValid = await verifyPassword(email, password);
+      // Authenticate with Supabase Auth
+      console.log('Login attempt for:', email);
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
       
-      if (!isPasswordValid) {
-        console.warn('Invalid credentials for email:', email);
+      if (authError || !authData.user) {
+        console.warn('Authentication failed for:', email);
         setLoginError('Invalid email or password. Please try again.');
         return;
       }
 
-      // Only after password is verified, resolve the role
-      const { role, userId, accountEmail, fullName } = await resolveRoleByEmail(email);
+      // After successful auth, fetch latest user details from tbl_user (ALWAYS FRESH)
+      console.log('=== LOGIN ROUTING ===');
+      console.log('Authenticated email:', authData.user.email);
+      
+      const { role, userId, accountEmail, fullName } = await resolveRoleByEmail(authData.user.email);
 
-      console.log('Login attempt - Email:', email, 'Role found:', role, 'UserId:', userId, 'FullName:', fullName);
+      console.log('Fetched role from tbl_user:', role);
+      console.log('Login data:', { email: accountEmail, role, userId, fullName });
 
-      if (!role) {
-        await supabase.auth.signOut();
-        setLoginError('There is no account associated with that email, or you do not have admin access.');
-        return;
-      }
-
-      login({ email: accountEmail, role, id: userId, name: fullName });
-
-      if (role === 'Staff') {
+      // Role-based routing
+      console.log('=== ROLE-BASED ACCESS CONTROL ===');
+      console.log('Checking role:', role);
+      
+      if (role === 'Owner') {
+        console.log('✓ ACCESS GRANTED - Owner role detected');
+        console.log('✓ Owner-based canteen dashboard access enabled');
+        console.log('✓ Store lookup will use: tbl_canteenstore.csv_email =', accountEmail);
+        console.log('Navigating to /dashboard');
+        login({ email: accountEmail, role, id: userId, name: fullName });
         navigate('/dashboard');
         return;
       }
 
-      navigate('/dashboard');
+      if (role === 'SuperAdmin') {
+        console.log('✓ ACCESS GRANTED - SuperAdmin role detected');
+        console.log('Navigating to /superadmin/dashboard');
+        login({ email: accountEmail, role, id: userId, name: fullName });
+        navigate('/superadmin/dashboard');
+        return;
+      }
+
+      // Deny access for Staff, Student, or null role
+      console.log('✗ ACCESS DENIED');
+      console.log('✗ Role not allowed for web dashboard:', role);
+      console.log('✗ Staff role is NO LONGER valid for canteen dashboard');
+      console.log('✗ Only Owner and SuperAdmin can access web dashboard');
+      await supabase.auth.signOut();
+      localStorage.clear();
+      sessionStorage.clear();
+      setLoginError('You do not have permission to access this dashboard.');
+      return;
     } catch (err) {
       console.error('Login error:', err);
       setLoginError('Unable to validate account right now. Please try again.');

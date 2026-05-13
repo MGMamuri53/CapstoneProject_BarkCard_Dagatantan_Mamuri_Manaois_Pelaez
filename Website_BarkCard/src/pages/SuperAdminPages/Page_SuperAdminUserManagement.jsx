@@ -116,6 +116,8 @@ export default function AdminPage_UserManagement() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editForm, setEditForm] = useState({});
   const [showRegModal, setShowRegModal] = useState(false);
+  const [canteenStores, setCanteenStores] = useState([]);
+  const [selectedStoreId, setSelectedStoreId] = useState(null);
 
   // Registration Form State
   const [noMiddleName, setNoMiddleName] = useState(false);
@@ -147,8 +149,24 @@ export default function AdminPage_UserManagement() {
   useEffect(() => {
     if (user && user.role === 'SuperAdmin') {
       fetchUsers();
+      fetchCanteenStores();
     }
   }, [user]);
+
+  const fetchCanteenStores = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('tbl_canteenstore')
+        .select('csv_id, csv_name, csv_location, csv_manager, csv_email')
+        .order('csv_name', { ascending: true });
+
+      if (error) throw error;
+      setCanteenStores(data || []);
+    } catch (err) {
+      console.error('Error fetching canteen stores:', err);
+      toast.error('Failed to load canteen stores');
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -268,26 +286,130 @@ export default function AdminPage_UserManagement() {
 
   const handleEditProfile = async () => {
     if (!selectedUser) return;
+    
+    const filterId = String(selectedUserId).trim();
+    const newRole = String(editForm.role).trim();
+    const oldRole = selectedUser.role;
+    
+    console.log('=== ROLE/PROFILE UPDATE ===');
+    console.log('Updating tbl_user where uv_id =', filterId);
+    console.log('Old Role:', oldRole);
+    console.log('New Role:', newRole);
+    
+    // Validate role value
+    const validRoles = ['SuperAdmin', 'Owner', 'Staff', 'Student', 'Hold'];
+    if (!validRoles.includes(newRole)) {
+      console.error('Invalid role value:', newRole);
+      alert(`Invalid role: ${newRole}. Must be one of: ${validRoles.join(', ')}`);
+      return;
+    }
+
+    // If changing to Owner, require store selection
+    if (newRole === 'Owner' && !selectedStoreId) {
+      toast.error('Please select a canteen store for this Owner');
+      return;
+    }
+
+    // If changing from Owner to another role, confirm
+    if (oldRole === 'Owner' && newRole !== 'Owner') {
+      const confirmed = window.confirm(
+        'This user is currently assigned as an Owner. Changing their role will remove their store assignment. Continue?'
+      );
+      if (!confirmed) return;
+    }
+    
     try {
-      const { error } = await supabase
+      const updateData = {
+        uv_lastname: editForm.lastName,
+        uv_firstname: editForm.firstName,
+        uv_middlename: editForm.middleName,
+        uv_email: editForm.email,
+        uv_role: newRole
+      };
+      
+      console.log('Update payload:', updateData);
+      
+      const { data: updateResult, error } = await supabase
         .from('tbl_user')
-        .update({
-          uv_lastname: editForm.lastName,
-          uv_firstname: editForm.firstName,
-          uv_middlename: editForm.middleName,
-          uv_email: editForm.email,
-          uv_role: editForm.role 
-        })
-        .eq('uv_id', selectedUserId);
+        .update(updateData)
+        .eq('uv_id', filterId)
+        .select('uv_id, uv_email, uv_role');
 
-      if (error) throw error;
+      console.log('Update Result:', updateResult);
+      console.log('Update Error:', error);
 
+      if (error) {
+        console.error('Supabase Error:', error.message);
+        console.error('Error Code:', error.code);
+        
+        if (error.code === '42501' || error.message.includes('permission')) {
+          alert(`RLS Policy Error: tbl_user UPDATE policy missing.\n\n${error.message}`);
+        } else {
+          alert(`Update failed:\n\n${error.message}`);
+        }
+        throw error;
+      }
+
+      // Check if update actually affected rows
+      if (!updateResult || updateResult.length === 0) {
+        console.error('WARNING: No user row was updated!');
+        alert('No user row was updated. Check:\n1. uv_id filter: ' + filterId + '\n2. RLS UPDATE policy on tbl_user\n3. Row exists in database');
+        return;
+      }
+
+      console.log('Update successful. Rows affected:', updateResult.length);
+      console.log('Updated row:', updateResult[0]);
+
+      // If new role is Owner, assign store
+      if (newRole === 'Owner' && selectedStoreId) {
+        console.log('Assigning store to Owner:', selectedStoreId);
+        const fullName = `${editForm.firstName} ${editForm.lastName}`.trim();
+        
+        const { error: storeError } = await supabase
+          .from('tbl_canteenstore')
+          .update({
+            csv_email: editForm.email,
+            csv_manager: fullName
+          })
+          .eq('csv_id', selectedStoreId);
+
+        if (storeError) {
+          console.error('Store assignment error:', storeError);
+          toast.error('User updated but store assignment failed: ' + storeError.message);
+        } else {
+          console.log('Store assigned successfully');
+        }
+      }
+
+      // If changing from Owner, clear store assignment
+      if (oldRole === 'Owner' && newRole !== 'Owner') {
+        console.log('Clearing store assignment for former Owner');
+        const { error: clearError } = await supabase
+          .from('tbl_canteenstore')
+          .update({
+            csv_email: null,
+            csv_manager: null
+          })
+          .eq('csv_email', selectedUser.email);
+
+        if (clearError) {
+          console.error('Error clearing store assignment:', clearError);
+        }
+      }
+
+      // Update local state
       setUsers(prev => prev.map(u => u.id === selectedUserId ? { ...u, ...editForm } : u));
-      toast.success('Profile updated successfully');
+      
+      // Refresh from database
+      await fetchUsers();
+      await fetchCanteenStores();
+      
+      toast.success(`Profile updated successfully. Role: ${oldRole} → ${newRole}`);
       setShowEditModal(false);
-    // eslint-disable-next-line no-unused-vars
-    } catch (_err) {
-      toast.error('Failed to update profile');
+      setSelectedStoreId(null);
+    } catch (err) {
+      console.error('=== UPDATE FAILED ===');
+      console.error('Error:', err);
     }
   };
 
@@ -459,7 +581,7 @@ export default function AdminPage_UserManagement() {
                   <p className="small fw-bold text-uppercase text-muted mb-1" style={{fontSize: '0.7rem'}}>Operations</p>
                   <button className="xbtn xbtn-primary text-start" onClick={() => setShowRegModal(true)}>👤 New Registration</button>
                   <button className="xbtn text-start" disabled={!selectedUser} onClick={() => toast.info("NFC assignment coming soon")}>💳 Assign NFC ID</button>
-                  <button className="xbtn text-start" disabled={!selectedUser} onClick={() => {
+                  <button className="xbtn text-start" disabled={!selectedUser} onClick={async () => {
                     setEditForm({
                       firstName: selectedUser.firstName,
                       lastName: selectedUser.lastName,
@@ -467,6 +589,22 @@ export default function AdminPage_UserManagement() {
                       email: selectedUser.email,
                       role: selectedUser.role
                     });
+                    
+                    // If user is Owner, find their assigned store
+                    if (selectedUser.role === 'Owner') {
+                      const { data: storeData } = await supabase
+                        .from('tbl_canteenstore')
+                        .select('csv_id')
+                        .eq('csv_email', selectedUser.email)
+                        .maybeSingle();
+                      
+                      if (storeData) {
+                        setSelectedStoreId(storeData.csv_id);
+                      }
+                    } else {
+                      setSelectedStoreId(null);
+                    }
+                    
                     setShowEditModal(true);
                   }}>✏️ Edit Profile</button>
                   
@@ -644,7 +782,12 @@ export default function AdminPage_UserManagement() {
                   <select 
                     className={`form-select ${editForm.role === 'Hold' ? 'border-danger text-danger' : ''}`}
                     value={editForm.role || ''} 
-                    onChange={(e) => setEditForm({...editForm, role: e.target.value})}
+                    onChange={(e) => {
+                      setEditForm({...editForm, role: e.target.value});
+                      if (e.target.value !== 'Owner') {
+                        setSelectedStoreId(null);
+                      }
+                    }}
                   >
                     <option value="Student">Student (Active)</option>
                     <option value="Staff">Staff (Active)</option>
@@ -653,6 +796,29 @@ export default function AdminPage_UserManagement() {
                     <option value="Hold">HOLD / DEACTIVATED</option>
                   </select>
                 </div>
+
+                {/* Show store assignment dropdown when Owner is selected */}
+                {editForm.role === 'Owner' && (
+                  <div className="mt-3 p-3 rounded border border-primary bg-light">
+                    <label className="form-label small fw-bold text-primary text-uppercase">🏪 Assign Canteen Store</label>
+                    <select 
+                      className="form-select"
+                      value={selectedStoreId || ''}
+                      onChange={(e) => setSelectedStoreId(e.target.value ? Number(e.target.value) : null)}
+                    >
+                      <option value="">-- Select Store --</option>
+                      {canteenStores.map(store => (
+                        <option key={store.csv_id} value={store.csv_id}>
+                          {store.csv_name} ({store.csv_location})
+                          {store.csv_manager && ` - Currently: ${store.csv_manager}`}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="text-muted d-block mt-2">
+                      This Owner will be assigned to manage the selected canteen store.
+                    </small>
+                  </div>
+                )}
               </div>
               <div className="modal-footer bg-light px-4">
                 <button type="button" className="btn btn-secondary fw-bold" onClick={() => setShowEditModal(false)}>CANCEL</button>

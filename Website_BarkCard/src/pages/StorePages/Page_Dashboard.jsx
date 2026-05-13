@@ -75,61 +75,156 @@ const formatUserName = (user) => {
 
 export default function Dashboard({ menuItems = [] }) {
   const navigate = useNavigate();
-  const { user } = useAuth(); // Get current user
+  const { user } = useAuth();
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  
-  // State for fetching Supabase data
   const [orders, setOrders] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [storeId, setStoreId] = useState(null);
+  const [storeName, setStoreName] = useState('');
 
-  // Fetch orders from Supabase on component mount
+  console.log('[Dashboard] === OWNER DASHBOARD INITIALIZATION ===');
+  console.log('[Dashboard] User role:', user?.role);
+  console.log('[Dashboard] User email:', user?.email);
+
+  // Fetch Owner's store
+  useEffect(() => {
+    const fetchOwnerStore = async () => {
+      try {
+        const authEmail = String(user?.email || '').trim().toLowerCase();
+
+        if (!authEmail) {
+          console.error('[Dashboard] No email found for Owner');
+          return;
+        }
+
+        console.log('[Dashboard] Fetching store for Owner email:', authEmail);
+        const { data: store, error: storeError } = await supabase
+          .from('tbl_canteenstore')
+          .select('csv_id, csv_name')
+          .eq('csv_email', authEmail)
+          .maybeSingle();
+
+        console.log('[Dashboard] Store query result:', store);
+        console.log('[Dashboard] Store query error:', storeError);
+
+        if (store) {
+          console.log('[Dashboard] Owner store resolved - csv_id:', store.csv_id, 'name:', store.csv_name);
+          setStoreId(store.csv_id);
+          setStoreName(store.csv_name);
+        } else {
+          console.error('[Dashboard] No store found for Owner email:', authEmail);
+        }
+      } catch (err) {
+        console.error('[Dashboard] Error fetching Owner store:', err);
+      }
+    };
+
+    if (user?.email && user?.role === 'Owner') {
+      fetchOwnerStore();
+    }
+  }, [user?.email, user?.role]);
+
+  // Fetch orders filtered by Owner's store
   useEffect(() => {
     const fetchOrders = async () => {
+      if (!storeId) {
+        console.log('[Dashboard] Waiting for storeId before fetching orders...');
+        return;
+      }
+
       try {
         setIsLoading(true);
+        console.log('[Dashboard] Fetching orders for store csv_id:', storeId);
         
-        // Fetch order, user name, and nested order details + product names
-        const { data, error } = await supabase
-          .from('tbl_Order')
+        // Query tbl_order directly by csv_id
+        const { data: directOrders, error: directError } = await supabase
+          .from('tbl_order')
+          .select('*')
+          .eq('csv_id', storeId)
+          .order('ov_createdat', { ascending: false });
+
+        if (directError) throw directError;
+
+        console.log('[Dashboard] Fetched', directOrders?.length || 0, 'orders');
+
+        if (!directOrders || directOrders.length === 0) {
+          setOrders([]);
+          return;
+        }
+
+        // Fetch order details
+        const orderIds = directOrders.map(o => o.ov_id);
+        const { data: detailsData } = await supabase
+          .from('tbl_orderdetails')
           .select(`
-            Ov_ID,
-            Ov_TotalAmount,
-            Ov_Status,
-            Ov_CreatedAt,
-            tbl_User ( Uv_FullName ),
-            tbl_OrderDetails (
-              ODv_Quantity,
-              tbl_StoreProducts ( SPv_Name )
+            odv_id,
+            ov_id,
+            odv_quantity,
+            tbl_storeproducts:spv_id (
+              spv_name
             )
           `)
-          .order('Ov_CreatedAt', { ascending: false });
+          .in('ov_id', orderIds);
 
-        if (error) throw error;
+        // Group details by order
+        const detailsByOrder = {};
+        if (detailsData) {
+          detailsData.forEach(detail => {
+            const orderId = detail.ov_id;
+            if (!detailsByOrder[orderId]) {
+              detailsByOrder[orderId] = [];
+            }
+            detailsByOrder[orderId].push({
+              spv_name: detail.tbl_storeproducts?.spv_name || 'Unknown Item',
+              odv_quantity: detail.odv_quantity
+            });
+          });
+        }
 
-        // Map Supabase payload to the structure the component expects
-        const formattedOrders = data.map(order => ({
-          Ov_ID: order.Ov_ID,
-          Ov_TotalAmount: order.Ov_TotalAmount,
-          Ov_Status: order.Ov_Status,
-          Ov_CreatedAt: order.Ov_CreatedAt,
-          Uv_FullName: order.tbl_User?.Uv_FullName || 'Unknown Student',
-          ODv_Items: order.tbl_OrderDetails.map(detail => ({
-            SPv_Name: detail.tbl_StoreProducts?.SPv_Name || 'Unknown Item',
-            ODv_Quantity: detail.ODv_Quantity
-          }))
-        }));
+        // Fetch user names
+        const uniqueUserIds = [...new Set(directOrders.map(o => o.uv_id).filter(Boolean))];
+        let usersById = {};
 
+        if (uniqueUserIds.length > 0) {
+          const { data: userRows } = await supabase
+            .from('tbl_user')
+            .select('uv_id, uv_firstname, uv_lastname')
+            .in('uv_id', uniqueUserIds);
+
+          if (userRows) {
+            usersById = userRows.reduce((acc, u) => {
+              acc[u.uv_id] = u;
+              return acc;
+            }, {});
+          }
+        }
+
+        // Format orders
+        const formattedOrders = directOrders.map(order => {
+          const userRow = usersById[order.uv_id];
+          return {
+            ov_id: order.ov_id,
+            ov_totalamount: order.ov_totalamount,
+            ov_status: order.ov_status,
+            ov_createdat: order.ov_createdat,
+            uv_fullname: userRow
+              ? `${userRow.uv_lastname || ''} ${userRow.uv_firstname || ''}`.trim()
+              : 'Unknown Student',
+            odv_items: detailsByOrder[order.ov_id] || []
+          };
+        });
+
+        console.log('[Dashboard] Final formatted orders:', formattedOrders.length);
         setOrders(formattedOrders);
-        
       } catch (error) {
-        console.error("Error fetching orders from Supabase:", error.message);
+        console.error('[Dashboard] Error fetching orders:', error.message);
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchOrders();
-  }, []);
+  }, [storeId]);
 
   // Show a loading spinner while waiting for Supabase data
   if (isLoading) {
@@ -146,18 +241,18 @@ export default function Dashboard({ menuItems = [] }) {
   const totalOrders = orders.length;
   
   const alertItems = menuItems
-    .filter((item) => item.SPv_Quantity <= 10)
-    .sort((a, b) => a.SPv_Quantity - b.SPv_Quantity);
+    .filter((item) => item.spv_quantity <= 10)
+    .sort((a, b) => a.spv_quantity - b.spv_quantity);
     
   const lowStockCount = alertItems.length;
-  const pendingOrders = orders.filter((order) => order.Ov_Status === 'Pending').length;
-  const completedOrders = orders.filter((order) => order.Ov_Status === 'Completed').length;
+  const pendingOrders = orders.filter((order) => order.ov_status === 'Pending').length;
+  const completedOrders = orders.filter((order) => order.ov_status === 'Completed').length;
   const completionRate = totalOrders > 0 ? Math.round((completedOrders / totalOrders) * 100) : 0;
 
   const topSellingItem = orders
-    .flatMap((order) => order.ODv_Items || [])
+    .flatMap((order) => order.odv_items || [])
     .reduce((totals, item) => {
-      totals[item.SPv_Name] = (totals[item.SPv_Name] ?? 0) + item.ODv_Quantity;
+      totals[item.spv_name] = (totals[item.spv_name] ?? 0) + item.odv_quantity;
       return totals;
     }, {});
 
@@ -170,7 +265,7 @@ export default function Dashboard({ menuItems = [] }) {
   const [_topItemName, _topItemOrders] = topEntry;
 
   const totalRevenue = orders.reduce((sum, order) => {
-    return sum + parseAmount(order.Ov_TotalAmount);
+    return sum + parseAmount(order.ov_totalamount);
   }, 0);
 
   const totalRevenueFormatted = formatAmount(totalRevenue);
@@ -181,9 +276,9 @@ export default function Dashboard({ menuItems = [] }) {
       <div className="d-flex align-items-center justify-content-between mb-4">
         <div>
           <h2 className="display-6 fw-bold text-primary mb-0">Dashboard</h2>
-          {/* Displays the formatted user name */}
           <p className="text-muted">
-            Welcome back, <strong className="text-dark">{formatUserName(user)}</strong>! Overview of today's academic dining operations.
+            Welcome back, <strong className="text-dark">{formatUserName(user)}</strong>! 
+            {storeName && <span className="text-primary"> • {storeName}</span>}
           </p>
         </div>
         <div className="d-flex gap-2">
@@ -255,21 +350,21 @@ export default function Dashboard({ menuItems = [] }) {
                 </thead>
                 <tbody>
                   {recentOrders.map((order, index) => (
-                    <tr key={order.Ov_ID}>
+                    <tr key={order.ov_id}>
                       <td>
                         <div className="d-flex align-items-center gap-2">
                           <div className={`rounded-circle d-flex align-items-center justify-content-center fw-bold ${avatarBackgrounds[index % avatarBackgrounds.length]}`} style={{width: '32px', height: '32px', fontSize: '12px'}}>
-                            {getInitials(order.Uv_FullName)}
+                            {getInitials(order.uv_fullname)}
                           </div>
-                          <span className="small fw-semibold">{order.Uv_FullName}</span>
+                          <span className="small fw-semibold">{order.uv_fullname}</span>
                         </div>
                       </td>
-                      <td className="small text-muted font-monospace">{order.Ov_ID}</td>
-                      <td className="small text-truncate" style={{maxWidth: '150px'}}>{order.ODv_Items?.map(i => i.SPv_Name).join(', ')}</td>
-                      <td className="small fw-bold">{formatAmount(order.Ov_TotalAmount)}</td>
+                      <td className="small text-muted font-monospace">{order.ov_id}</td>
+                      <td className="small text-truncate" style={{maxWidth: '150px'}}>{order.odv_items?.map(i => i.spv_name).join(', ')}</td>
+                      <td className="small fw-bold">{formatAmount(order.ov_totalamount)}</td>
                       <td>
-                        <span className={`badge rounded-pill ${getStatusStyle(order.Ov_Status)}`} style={{fontSize: '10px'}}>
-                          {order.Ov_Status}
+                        <span className={`badge rounded-pill ${getStatusStyle(order.ov_status)}`} style={{fontSize: '10px'}}>
+                          {order.ov_status}
                         </span>
                       </td>
                     </tr>
@@ -292,10 +387,10 @@ export default function Dashboard({ menuItems = [] }) {
                 <p className="small text-muted">All items are well stocked.</p>
               ) : (
                 alertItems.slice(0, 3).map((item) => (
-                  <div key={item.SPv_ID} className="d-flex justify-content-between align-items-center mb-2">
+                  <div key={item.spv_id} className="d-flex justify-content-between align-items-center mb-2">
                     <div>
-                      <div className="small fw-bold">{item.SPv_Name}</div>
-                      <div className="text-muted" style={{fontSize: '11px'}}>{item.SPv_Quantity} left</div>
+                      <div className="small fw-bold">{item.spv_name}</div>
+                      <div className="text-muted" style={{fontSize: '11px'}}>{item.spv_quantity} left</div>
                     </div>
                     <button className="btn btn-link btn-sm text-decoration-none p-0">Reorder</button>
                   </div>
@@ -342,15 +437,15 @@ export default function Dashboard({ menuItems = [] }) {
                     </thead>
                     <tbody>
                       {orders.map((order) => (
-                        <tr key={order.Ov_ID}>
-                          <td className="small">{getOrderTime(order.Ov_CreatedAt)}</td>
-                          <td className="small fw-bold">{order.Uv_FullName}</td>
-                          <td className="small text-muted font-monospace">{order.Ov_ID}</td>
-                          <td className="small">{order.ODv_Items?.map(i => i.SPv_Name).join(', ')}</td>
-                          <td className="small fw-bold">{formatAmount(order.Ov_TotalAmount)}</td>
+                        <tr key={order.ov_id}>
+                          <td className="small">{getOrderTime(order.ov_createdat)}</td>
+                          <td className="small fw-bold">{order.uv_fullname}</td>
+                          <td className="small text-muted font-monospace">{order.ov_id}</td>
+                          <td className="small">{order.odv_items?.map(i => i.spv_name).join(', ')}</td>
+                          <td className="small fw-bold">{formatAmount(order.ov_totalamount)}</td>
                           <td>
-                            <span className={`badge rounded-pill ${getStatusStyle(order.Ov_Status)}`}>
-                              {order.Ov_Status}
+                            <span className={`badge rounded-pill ${getStatusStyle(order.ov_status)}`}>
+                              {order.ov_status}
                             </span>
                           </td>
                         </tr>

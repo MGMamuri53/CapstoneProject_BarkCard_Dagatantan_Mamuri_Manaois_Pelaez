@@ -35,34 +35,67 @@ export const useOrders = (csvId = null) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  console.log('[useOrders] === OWNER-BASED ORDER HOOK ===');
+  console.log('[useOrders] Hook initialized with store csv_id:', csvId);
+  console.log('[useOrders] This hook uses OWNER logic, NOT Staff logic');
+  console.log('[useOrders] Orders filtered by: tbl_storeproducts.csv_id ==', csvId);
+
   useEffect(() => {
     if (csvId) {
+      console.log('[useOrders] csvId changed, fetching orders for store:', csvId);
       fetchOrders();
+    } else {
+      console.log('[useOrders] No csvId provided, skipping fetch');
     }
   }, [csvId]);
 
   const fetchOrders = async () => {
+    if (!csvId) {
+      console.log('[useOrders] No csvId provided, skipping fetch');
+      setOrders([]);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
+      
+      console.log('[useOrders] === FETCHING ORDERS FOR STORE ===');
+      console.log('[useOrders] Store csv_id:', csvId);
 
-      // Fetch order details with product and order info
+      // Query tbl_order directly by csv_id
+      const { data: directOrders, error: directError } = await supabase
+        .from('tbl_order')
+        .select('*')
+        .eq('csv_id', csvId);
+
+      console.log('[useOrders] Orders fetched from tbl_order:', directOrders?.length || 0);
+
+      if (directError) {
+        console.error('[useOrders] Error fetching orders:', directError);
+        setError(directError.message);
+        return;
+      }
+
+      if (!directOrders || directOrders.length === 0) {
+        console.log('[useOrders] No orders found for store csv_id:', csvId);
+        setOrders([]);
+        return;
+      }
+
+      console.log('[useOrders] Sample order:', directOrders[0]);
+
+      // Fetch order details for each order
+      const orderIds = directOrders.map(o => o.ov_id);
+
       const { data: detailsData, error: detailsError } = await supabase
         .from('tbl_orderdetails')
         .select(`
           odv_id,
+          ov_id,
           odv_quantity,
           odv_subtotal,
-          tbl_order:ov_id (
-            ov_id,
-            uv_id,
-            ov_totalamount,
-            ov_type,
-            ov_status,
-            ov_queuenumber,
-            ov_ispaid,
-            ov_createdat
-          ),
           tbl_storeproducts:spv_id (
             spv_id,
             csv_id,
@@ -70,46 +103,33 @@ export const useOrders = (csvId = null) => {
             spv_price,
             spv_img
           )
-        `);
+        `)
+        .in('ov_id', orderIds);
 
       if (detailsError) {
-        console.error('Error fetching order details:', detailsError);
-        setError(detailsError.message);
-        return;
+        console.error('[useOrders] Error fetching order details:', detailsError);
       }
 
-      // Filter by csvId and group by order
-      const filteredAndGrouped = detailsData
-        .filter(detail => detail.tbl_storeproducts?.csv_id === csvId)
-        .reduce((grouped, detail) => {
-          const orderId = detail.tbl_order.ov_id;
-          if (!grouped[orderId]) {
-            grouped[orderId] = {
-              ov_id: detail.tbl_order.ov_id,
-              uv_id: detail.tbl_order.uv_id,
-              ov_totalamount: detail.tbl_order.ov_totalamount,
-              ov_type: detail.tbl_order.ov_type,
-              ov_status: detail.tbl_order.ov_status,
-              ov_queuenumber: detail.tbl_order.ov_queuenumber,
-              ov_ispaid: detail.tbl_order.ov_ispaid,
-              ov_createdat: detail.tbl_order.ov_createdat,
-              items: []
-            };
+      // Group details by order
+      const detailsByOrder = {};
+      if (detailsData) {
+        detailsData.forEach(detail => {
+          const orderId = detail.ov_id;
+          if (!detailsByOrder[orderId]) {
+            detailsByOrder[orderId] = [];
           }
-          grouped[orderId].items.push({
+          detailsByOrder[orderId].push({
             odv_id: detail.odv_id,
-            spv_id: detail.tbl_storeproducts.spv_id,
-            spv_name: detail.tbl_storeproducts.spv_name,
-            spv_price: detail.tbl_storeproducts.spv_price,
-            spv_img: detail.tbl_storeproducts.spv_img,
+            spv_name: detail.tbl_storeproducts?.spv_name || 'Unknown Item',
+            spv_img: detail.tbl_storeproducts?.spv_img,
             odv_quantity: detail.odv_quantity,
             odv_subtotal: detail.odv_subtotal
           });
-          return grouped;
-        }, {});
+        });
+      }
 
-      const ordersArray = Object.values(filteredAndGrouped);
-      const uniqueUserIds = [...new Set(ordersArray.map((order) => order.uv_id).filter(Boolean))];
+      // Fetch user info
+      const uniqueUserIds = [...new Set(directOrders.map(o => o.uv_id).filter(Boolean))];
       let usersById = {};
 
       if (uniqueUserIds.length > 0) {
@@ -119,54 +139,52 @@ export const useOrders = (csvId = null) => {
           .in('uv_id', uniqueUserIds);
 
         if (userError) {
-          console.error('Error fetching order user details:', userError);
+          console.error('[useOrders] Error fetching users:', userError);
         } else {
-          usersById = (userRows || []).reduce((accumulator, userRow) => {
-            accumulator[userRow.uv_id] = userRow;
-            return accumulator;
+          usersById = (userRows || []).reduce((acc, u) => {
+            acc[u.uv_id] = u;
+            return acc;
           }, {});
         }
       }
 
-      // Transform to match component expectations
-      const transformedOrders = ordersArray
-        .map((order) => {
-          const userRow = usersById[order.uv_id];
+      // Transform orders
+      const transformedOrders = directOrders.map(order => {
+        const userRow = usersById[order.uv_id];
+        const items = detailsByOrder[order.ov_id] || [];
 
-          return {
-            Ov_ID: order.ov_id,
-            Uv_ID: order.uv_id,
-            Uv_FullName: buildFullName(userRow, order.uv_id),
-            Uv_Email: userRow?.uv_email || 'N/A',
-            Ov_TotalAmount: order.ov_totalamount,
-            Ov_Type: order.ov_type,
-            WTv_Type: order.ov_type,
-            Ov_Status: normalizeStatus(order.ov_status || 'pending'),
-            Ov_QueueNumber: order.ov_queuenumber,
-            Ov_IsPaid: order.ov_ispaid,
-            Ov_CreatedAt: formatOrderDate(order.ov_createdat),
-            Ov_CreatedAtRaw: order.ov_createdat,
-            ODv_Items: order.items.map((item) => ({
-              ODv_ID: item.odv_id,
-              SPv_Name: item.spv_name,
-              SPv_IMG: item.spv_img,
-              ODv_Quantity: item.odv_quantity,
-              ODv_Subtotal: item.odv_subtotal
-            }))
-          };
-        })
-        .sort((a, b) => new Date(b.Ov_CreatedAtRaw) - new Date(a.Ov_CreatedAtRaw));
+        // Normalize status to proper case
+        const rawStatus = String(order.ov_status || 'pending').trim();
+        const normalizedStatus = rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1).toLowerCase();
+
+        return {
+          Ov_ID: order.ov_id,
+          Uv_ID: order.uv_id,
+          Uv_FullName: buildFullName(userRow, order.uv_id),
+          Uv_Email: userRow?.uv_email || 'N/A',
+          Ov_TotalAmount: order.ov_totalamount,
+          Ov_Type: order.ov_type,
+          WTv_Type: order.ov_type,
+          Ov_Status: normalizedStatus,
+          Ov_QueueNumber: order.ov_queuenumber,
+          Ov_IsPaid: order.ov_ispaid,
+          Ov_CreatedAt: formatOrderDate(order.ov_createdat),
+          Ov_CreatedAtRaw: order.ov_createdat,
+          ODv_Items: items
+        };
+      }).sort((a, b) => new Date(b.Ov_CreatedAtRaw) - new Date(a.Ov_CreatedAtRaw));
+
+      console.log('[useOrders] Final transformed orders:', transformedOrders.length);
 
       setOrders(transformedOrders);
     } catch (err) {
-      console.error('Unexpected error fetching orders:', err);
+      console.error('[useOrders] Unexpected error:', err);
       setError('Failed to fetch orders');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Setup real-time subscriptions
   useEffect(() => {
     if (!csvId) return;
 
@@ -210,11 +228,10 @@ export const useOrders = (csvId = null) => {
         .eq('ov_id', orderId);
 
       if (error) {
-        console.error('Error updating order status:', error);
+        console.error('[useOrders] Error updating order status:', error);
         return false;
       }
 
-      // Update local state
       setOrders((prevOrders) =>
         prevOrders.map((order) =>
           order.Ov_ID === orderId ? { ...order, Ov_Status: databaseStatus } : order
@@ -225,7 +242,7 @@ export const useOrders = (csvId = null) => {
 
       return true;
     } catch (err) {
-      console.error('Unexpected error updating order status:', err);
+      console.error('[useOrders] Unexpected error updating order status:', err);
       return false;
     }
   };
@@ -238,7 +255,7 @@ export const useOrders = (csvId = null) => {
         .eq('ov_id', orderId);
 
       if (error) {
-        console.error('Error confirming payment:', error);
+        console.error('[useOrders] Error confirming payment:', error);
         return false;
       }
 
@@ -250,7 +267,7 @@ export const useOrders = (csvId = null) => {
 
       return true;
     } catch (err) {
-      console.error('Unexpected error confirming payment:', err);
+      console.error('[useOrders] Unexpected error confirming payment:', err);
       return false;
     }
   };
@@ -265,22 +282,52 @@ export const useOrders = (csvId = null) => {
 
   const fetchOrderByQr = async (ovId) => {
     try {
-      const { data, error } = await supabase
+      console.log('[useOrders] === QR SCANNER VALIDATION ===');
+      console.log('[useOrders] Scanned order ID:', ovId);
+      console.log('[useOrders] Owner store csv_id:', csvId);
+
+      // Fetch order directly from tbl_order
+      const { data: orderData, error: orderError } = await supabase
+        .from('tbl_order')
+        .select('*')
+        .eq('ov_id', ovId)
+        .maybeSingle();
+
+      if (orderError) throw orderError;
+
+      if (!orderData) {
+        console.error('[useOrders] Order not found:', ovId);
+        throw new Error('Order not found');
+      }
+
+      console.log('[useOrders] Order fetched:', orderData);
+      console.log('[useOrders] Order csv_id:', orderData.csv_id);
+
+      // Validate order belongs to this store using csv_id
+      const orderCsvId = String(orderData.csv_id || '').trim();
+      const storeCsvId = String(csvId || '').trim();
+
+      console.log('[useOrders] Comparing csv_ids:');
+      console.log('[useOrders]   Order csv_id (trimmed):', orderCsvId);
+      console.log('[useOrders]   Store csv_id (trimmed):', storeCsvId);
+      console.log('[useOrders]   Match:', orderCsvId === storeCsvId);
+
+      if (orderCsvId !== storeCsvId) {
+        console.error('[useOrders] Order does not belong to this store');
+        console.error('[useOrders]   Expected csv_id:', storeCsvId);
+        console.error('[useOrders]   Got csv_id:', orderCsvId);
+        throw new Error('Order does not belong to your store');
+      }
+
+      console.log('[useOrders] ✓ Order belongs to this store');
+
+      // Fetch order details
+      const { data: detailsData, error: detailsError } = await supabase
         .from('tbl_orderdetails')
         .select(`
           odv_id,
           odv_quantity,
           odv_subtotal,
-          tbl_order:ov_id (
-            ov_id,
-            uv_id,
-            ov_totalamount,
-            ov_type,
-            ov_status,
-            ov_queuenumber,
-            ov_ispaid,
-            ov_createdat
-          ),
           tbl_storeproducts:spv_id (
             spv_id,
             csv_id,
@@ -291,38 +338,32 @@ export const useOrders = (csvId = null) => {
         `)
         .eq('ov_id', ovId);
 
-      if (error) throw error;
+      if (detailsError) throw detailsError;
 
-      // Verify all products belong to staff csv_id
-      const belongsToStore = data.every(detail => detail.tbl_storeproducts?.csv_id === csvId);
-      if (!belongsToStore) {
-        throw new Error('Order does not belong to your store');
-      }
+      // Normalize status
+      const rawStatus = String(orderData.ov_status || 'pending').trim();
+      const normalizedStatus = rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1).toLowerCase();
 
-      if (data.length === 0) {
-        throw new Error('Order not found');
-      }
-
-      // Transform to single order object
       const order = {
-        Ov_ID: data[0].tbl_order.ov_id,
-        Uv_ID: data[0].tbl_order.uv_id,
-        Ov_TotalAmount: data[0].tbl_order.ov_totalamount,
-        Ov_Type: data[0].tbl_order.ov_type,
-        WTv_Type: data[0].tbl_order.ov_type,
-        Ov_Status: normalizeStatus(data[0].tbl_order.ov_status || 'pending'),
-        Ov_QueueNumber: data[0].tbl_order.ov_queuenumber,
-        Ov_IsPaid: data[0].tbl_order.ov_ispaid,
-        Ov_CreatedAt: formatOrderDate(data[0].tbl_order.ov_createdat),
-        ODv_Items: data.map(detail => ({
+        Ov_ID: orderData.ov_id,
+        Uv_ID: orderData.uv_id,
+        Ov_TotalAmount: orderData.ov_totalamount,
+        Ov_Type: orderData.ov_type,
+        WTv_Type: orderData.ov_type,
+        Ov_Status: normalizedStatus,
+        Ov_QueueNumber: orderData.ov_queuenumber,
+        Ov_IsPaid: orderData.ov_ispaid,
+        Ov_CreatedAt: formatOrderDate(orderData.ov_createdat),
+        ODv_Items: (detailsData || []).map(detail => ({
           ODv_ID: detail.odv_id,
-          SPv_Name: detail.tbl_storeproducts.spv_name,
-          SPv_IMG: detail.tbl_storeproducts.spv_img,
+          SPv_Name: detail.tbl_storeproducts?.spv_name || 'Unknown Item',
+          SPv_IMG: detail.tbl_storeproducts?.spv_img,
           ODv_Quantity: detail.odv_quantity,
           ODv_Subtotal: detail.odv_subtotal
         }))
       };
 
+      // Fetch user info
       const { data: userRow, error: userError } = await supabase
         .from('tbl_user')
         .select('uv_id, uv_firstname, uv_middlename, uv_lastname, uv_email')
@@ -330,15 +371,17 @@ export const useOrders = (csvId = null) => {
         .maybeSingle();
 
       if (userError) {
-        console.error('Error fetching QR order user details:', userError);
+        console.error('[useOrders] Error fetching user details:', userError);
       }
 
       order.Uv_FullName = buildFullName(userRow, order.Uv_ID);
       order.Uv_Email = userRow?.uv_email || 'N/A';
 
+      console.log('[useOrders] ✓ QR order validated and fetched successfully');
+
       return order;
     } catch (err) {
-      console.error('Error fetching order by QR:', err);
+      console.error('[useOrders] QR scanner validation failed:', err);
       throw err;
     }
   };
