@@ -3,6 +3,7 @@ const { NFC } = require('nfc-pcsc');
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
+const { randomUUID } = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
@@ -146,6 +147,7 @@ app.get('/api/auth/health', (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   try {
+    console.error('[auth/login] request received:', { body: req.body, time: new Date().toISOString() });
     if (!ensureAdminClient(res)) return;
 
     const email = normalizeEmail(req.body?.email);
@@ -205,15 +207,22 @@ app.post('/api/auth/login', async (req, res) => {
       });
     }
 
-    const storedPassword = String(credentials.ucv_passwordhash);
+    const storedPassword = String(credentials.ucv_passwordhash || '');
+    console.error('[auth/login] comparing passwords for uv_id', user.uv_id);
+    console.error('[auth/login] incomingPassword:', password);
+    console.error('[auth/login] storedPasswordSnippet:', storedPassword ? storedPassword.slice(0, 12) + '...' : '(empty)');
+
     let passwordMatches = false;
 
     if (isBcryptHash(storedPassword)) {
       passwordMatches = await bcrypt.compare(password, storedPassword);
+      console.error('[auth/login] bcrypt.compare result:', passwordMatches);
     } else {
       passwordMatches = storedPassword === password;
+      console.error('[auth/login] plaintext-compare result:', passwordMatches);
 
       if (passwordMatches) {
+        console.error('[auth/login] auto-migrating plaintext password to bcrypt for uv_id', user.uv_id);
         await hashAndStorePassword(user.uv_id, password);
       }
     }
@@ -347,6 +356,104 @@ app.post('/api/auth/migrate-passwords', async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || 'Password migration failed.'
+    });
+  }
+});
+
+app.post('/api/stores', async (req, res) => {
+  try {
+    if (!ensureAdminClient(res)) return;
+
+    const name = String(req.body?.name || '').trim();
+    const location = String(req.body?.location || '').trim();
+    const manager = String(req.body?.manager || '').trim();
+    const phone = String(req.body?.phone || '').trim();
+    const email = normalizeEmail(req.body?.email);
+    const status = String(req.body?.status || 'Active').trim() || 'Active';
+
+    if (!name || !location) {
+      return res.status(400).json({
+        success: false,
+        reason: 'invalid_request',
+        message: 'Store name and location are required.'
+      });
+    }
+
+    const generatedId = randomUUID();
+    const payload = {
+      csv_id: generatedId,
+      csv_name: name,
+      csv_location: location,
+      csv_manager: manager || null,
+      csv_phone: phone || null,
+      csv_email: email || null,
+      csv_status: status
+    };
+
+    console.error('[stores/create] generatedId:', generatedId);
+    try {
+      console.error('[stores/create] payload:', JSON.stringify(payload));
+    } catch (e) {
+      console.error('[stores/create] payload (raw):', payload);
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('tbl_canteenstore')
+      .insert([payload])
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('[stores/create] Error creating store:', error);
+      return res.status(500).json({
+        success: false,
+        reason: 'store_create_error',
+        message: error.message || 'Failed to create store.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      store: data
+    });
+  } catch (error) {
+    console.error('[stores/create] Unexpected error:', error);
+    return res.status(500).json({
+      success: false,
+      reason: 'server_error',
+      message: error.message || 'Failed to create store.'
+    });
+  }
+});
+
+app.get('/api/stores', async (req, res) => {
+  try {
+    if (!ensureAdminClient(res)) return;
+
+    const { data, error } = await supabaseAdmin
+      .from('tbl_canteenstore')
+      .select('csv_id, csv_name, csv_location, csv_manager, csv_phone, csv_email, csv_status, csv_createdat, uv_id')
+      .order('csv_name', { ascending: true });
+
+    if (error) {
+      console.error('[stores/list] Error fetching stores:', error);
+      return res.status(500).json({
+        success: false,
+        reason: 'store_list_error',
+        message: error.message || 'Failed to fetch stores.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      stores: data || []
+    });
+  } catch (error) {
+    console.error('[stores/list] Unexpected error:', error);
+    return res.status(500).json({
+      success: false,
+      reason: 'server_error',
+      message: error.message || 'Failed to fetch stores.'
     });
   }
 });

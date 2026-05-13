@@ -390,7 +390,7 @@ export default function AdminPage_UserManagement() {
         const { error: storeError } = await supabase
           .from('tbl_canteenstore')
           .update({
-            csv_email: editForm.email,
+            csv_email: editForm.email?.trim().toLowerCase(),
             csv_manager: fullName
           })
           .eq('csv_id', selectedStoreId);
@@ -409,7 +409,7 @@ export default function AdminPage_UserManagement() {
             csv_email: null,
             csv_manager: null
           })
-          .eq('csv_email', selectedUser.email);
+          .eq('csv_email', String(selectedUser.email || '').trim().toLowerCase());
 
         if (clearError) {
           console.error('Error clearing store assignment:', clearError);
@@ -699,7 +699,7 @@ export default function AdminPage_UserManagement() {
                       const { data: storeData } = await supabase
                         .from('tbl_canteenstore')
                         .select('csv_id')
-                        .eq('csv_email', selectedUser.email)
+                        .eq('csv_email', String(selectedUser.email || '').trim().toLowerCase())
                         .maybeSingle();
                       
                       if (storeData) {
@@ -935,7 +935,7 @@ export default function AdminPage_UserManagement() {
                     <select 
                       className="form-select"
                       value={selectedStoreId || ''}
-                      onChange={(e) => setSelectedStoreId(e.target.value ? Number(e.target.value) : null)}
+                      onChange={(e) => setSelectedStoreId(e.target.value || null)}
                     >
                       <option value="">-- Select Store --</option>
                       {canteenStores.map(store => (

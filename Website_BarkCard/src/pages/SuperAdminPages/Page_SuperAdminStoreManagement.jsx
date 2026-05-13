@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../supabaseClient';
 import { toast } from 'react-toastify';
+import { createStore, fetchStores as fetchStoresFromApi } from '../../utils/storeApi';
 
 const generateStoreId = () => {
   return Math.floor(Math.random() * 999999) + 1;
@@ -112,12 +113,7 @@ const StoreManagement = () => {
   const fetchStores = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('tbl_canteenstore')
-        .select('csv_id, csv_name, csv_location, csv_manager, csv_phone, csv_email, csv_status, csv_createdat')
-        .order('csv_name', { ascending: true });
-
-      if (error) throw error;
+      const data = await fetchStoresFromApi();
 
       if (!data || data.length === 0) {
         setStores([]);
@@ -155,29 +151,14 @@ const StoreManagement = () => {
         return;
       }
 
-      if (!idYear || !idNumber) {
-        toast.error('Please complete the Store ID assignment');
-        return;
-      }
-
-      const fullStoreId = `${idYear}-${idNumber}`;
-
-      const { data, error } = await supabase
-        .from('tbl_canteenstore')
-        .insert([
-          {
-            csv_id: parseInt(fullStoreId.replace('-', '')),
-            csv_name: formData.name,
-            csv_location: formData.location,
-            csv_manager: formData.manager,
-            csv_phone: formData.phone,
-            csv_email: formData.email,
-            csv_status: 'Active'
-          }
-        ])
-        .select();
-
-      if (error) throw error;
+      await createStore({
+        name: formData.name,
+        location: formData.location,
+        manager: formData.manager,
+        phone: formData.phone,
+        email: formData.email,
+        status: 'Active'
+      });
 
       await fetchStores();
       setFormData({ name: '', location: '', manager: '', phone: '', email: '' });
@@ -211,7 +192,7 @@ const StoreManagement = () => {
           csv_location: formData.location,
           csv_manager: formData.manager,
           csv_phone: formData.phone,
-          csv_email: formData.email
+          csv_email: formData.email?.trim().toLowerCase()
         })
         .eq('csv_id', selectedStore.id);
 

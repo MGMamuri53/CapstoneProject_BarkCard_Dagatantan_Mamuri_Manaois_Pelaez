@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
 import { useOrders } from '../../hooks/useOrders';
+import { normalizeRole } from '../../utils/helpers';
 
 const statusFilterOptions = [
   { label: 'All Orders', value: 'all' },
@@ -25,6 +26,7 @@ const formatStatusLabel = (value) => {
 
 export default function OrdersManagement() {
   const { user: currentAuthUser } = useAuth();
+  const normalizedUserRole = normalizeRole(currentAuthUser?.role);
   const { globalSearchTerm = '' } = useOutletContext() ?? {};
   
   // Staff store state
@@ -98,7 +100,7 @@ export default function OrdersManagement() {
         console.log('[OrderManagement] User role:', currentAuthUser?.role);
         console.log('[OrderManagement] Owner email:', currentAuthUser?.email);
         
-        if (currentAuthUser?.role !== 'Owner') {
+        if (normalizedUserRole !== 'Owner') {
           console.error('[OrderManagement] ✗ User is not Owner! Role:', currentAuthUser?.role);
           console.error('[OrderManagement] ✗ Only Owner role can access Order Management');
           setStoreId(null);
@@ -144,7 +146,7 @@ export default function OrdersManagement() {
     if (currentAuthUser?.email) {
       fetchStaffStore();
     }
-  }, [currentAuthUser?.email, currentAuthUser?.role]);
+  }, [currentAuthUser?.email, normalizedUserRole]);
 
   // Auto-focus scan input when page loads or modal closes
   useEffect(() => {
@@ -1043,7 +1045,7 @@ export default function OrdersManagement() {
         </div>
         
         {/* OWNER ONLY: Daily Summary with Revenue */}
-        {currentAuthUser?.role === 'Owner' && (
+        {normalizedUserRole === 'Owner' && (
           <div className="col-md-6 col-lg-4">
             <button onClick={() => setSelectedStatus('all')} className="card btn btn-light w-100 text-start p-0" type="button">
               <div className="card-body">

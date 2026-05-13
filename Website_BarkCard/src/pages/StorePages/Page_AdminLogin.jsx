@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { isValidEmail } from '../../utils/helpers';
+import { isValidEmail, normalizeRole } from '../../utils/helpers';
 import { verifyUserCredentials } from '../../utils/passwordUtils';
 
 export default function AdminLogin() {
@@ -13,6 +13,7 @@ export default function AdminLogin() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (isSubmitting) return;
     setIsSubmitting(true);
     setLoginError('');
 
@@ -39,6 +40,11 @@ export default function AdminLogin() {
       }
 
       console.log('Login attempt for:', email);
+      try {
+        console.debug('[login] payload before send:', { email, password });
+      } catch (e) {
+        console.debug('[login] payload before send (partial):', { email });
+      }
       const credentialCheck = await verifyUserCredentials(email, password);
       
       if (!credentialCheck?.ok) {
@@ -54,38 +60,40 @@ export default function AdminLogin() {
       }
 
       const { role, userId, email: accountEmail, fullName } = credentialCheck.user || {};
+      const normalizedRole = normalizeRole(role);
 
       // After successful password verification, check role
       console.log('=== LOGIN ROUTING ===');
       console.log('Authenticated email:', accountEmail);
       console.log('Fetched role from tbl_user:', role);
-      console.log('Login data:', { email: accountEmail, role, userId, fullName });
+      console.log('Normalized role:', normalizedRole);
+      console.log('Login data:', { email: accountEmail, role: normalizedRole, userId, fullName });
 
       // Role-based routing
       console.log('=== ROLE-BASED ACCESS CONTROL ===');
-      console.log('Checking role:', role);
+      console.log('Checking role:', normalizedRole);
       
-      if (role === 'Owner') {
+      if (normalizedRole === 'Owner') {
         console.log('✓ ACCESS GRANTED - Owner role detected');
         console.log('✓ Owner-based canteen dashboard access enabled');
         console.log('✓ Store lookup will use: tbl_canteenstore.csv_email =', accountEmail);
         console.log('Navigating to /dashboard');
-        login({ email: accountEmail, role, id: userId, name: fullName });
+        login({ email: accountEmail, role: normalizedRole, id: userId, name: fullName });
         navigate('/dashboard');
         return;
       }
 
-      if (role === 'SuperAdmin') {
+      if (normalizedRole === 'SuperAdmin') {
         console.log('✓ ACCESS GRANTED - SuperAdmin role detected');
         console.log('Navigating to /superadmin/dashboard');
-        login({ email: accountEmail, role, id: userId, name: fullName });
+        login({ email: accountEmail, role: normalizedRole, id: userId, name: fullName });
         navigate('/superadmin/dashboard');
         return;
       }
 
       // Deny access for Staff, Student, or null role
       console.log('✗ ACCESS DENIED');
-      console.log('✗ Role not allowed for web dashboard:', role);
+      console.log('✗ Role not allowed for web dashboard:', normalizedRole);
       console.log('✗ Staff role is NO LONGER valid for canteen dashboard');
       console.log('✗ Only Owner and SuperAdmin can access web dashboard');
       localStorage.clear();
@@ -183,7 +191,7 @@ export default function AdminLogin() {
                   </div>
                 </div>
 
-                <button className="btn btn-primary w-100 fw-bold py-3 rounded-3" type="submit">
+                <button className="btn btn-primary w-100 fw-bold py-3 rounded-3" type="submit" disabled={isSubmitting}>
                   {isSubmitting ? 'Checking account...' : null}
                   {!isSubmitting ? <span>Login</span> : null}
                   {!isSubmitting ? <span className="material-symbols-outlined ms-2">arrow_forward</span> : null}

@@ -14,7 +14,7 @@ import MigratePasswordsPage from './pages/MigratePasswordsPage';
 import { initialOrders } from './data/orders';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './supabaseClient';
-import { isSuperAdmin } from './utils/helpers';
+import { isSuperAdmin, normalizeRole } from './utils/helpers';
 
 const isSuperAdminRole = (role) => {
   return isSuperAdmin(role);
@@ -78,14 +78,15 @@ function App() {
   const [menuItems, setMenuItems] = useState([]);
   const { user } = useAuth();
   const [ownerStoreId, setOwnerStoreId] = useState(null);
+  const normalizedUserRole = normalizeRole(user?.role);
 
   // Fetch owner's store csv_id
   useEffect(() => {
     const fetchOwnerStore = async () => {
-      if (!user?.email || !user?.role) return;
+      if (!user?.email || !normalizedUserRole) return;
       
       // Only fetch store for Owner role
-      if (user.role !== 'Owner') {
+      if (normalizedUserRole !== 'Owner') {
         console.log('[App] User is not Owner, skipping store fetch');
         setOwnerStoreId(null);
         return;
@@ -117,7 +118,7 @@ function App() {
     };
 
     fetchOwnerStore();
-  }, [user?.email, user?.role]);
+  }, [user?.email, normalizedUserRole]);
 
   const fetchMenuItems = useCallback(async () => {
     // Only fetch menu items if we have a store ID

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../supabaseClient';
+import { normalizeRole } from '../../utils/helpers';
 
 const avatarBackgrounds = [
   'bg-primary text-white',
@@ -83,6 +84,7 @@ export default function Dashboard({ menuItems = [] }) {
   const [storeName, setStoreName] = useState('');
   const [cart, setCart] = useState([]);
   const [showCart, setShowCart] = useState(false);
+  const normalizedUserRole = normalizeRole(user?.role);
 
   console.log('[Dashboard] === OWNER DASHBOARD INITIALIZATION ===');
   console.log('[Dashboard] User role:', user?.role);
@@ -154,10 +156,10 @@ export default function Dashboard({ menuItems = [] }) {
       }
     };
 
-    if (user?.email && user?.role === 'Owner') {
+    if (user?.email && normalizedUserRole === 'Owner') {
       fetchOwnerStore();
     }
-  }, [user?.email, user?.role]);
+  }, [user?.email, normalizedUserRole]);
 
   // Fetch orders filtered by Owner's store
   useEffect(() => {
@@ -333,7 +335,7 @@ export default function Dashboard({ menuItems = [] }) {
           </button>
           
           {/* OWNER ONLY: Add New Item */}
-          {user?.role === 'Owner' && (
+          {normalizedUserRole === 'Owner' && (
             <button onClick={() => navigate('/menu')} className="btn btn-primary btn-sm d-flex align-items-center gap-2">
               <span className="material-symbols-outlined">add_circle</span>
               Add New Item
@@ -445,7 +447,7 @@ export default function Dashboard({ menuItems = [] }) {
           </div>
 
           {/* OWNER ONLY: Total Revenue Card */}
-          {user?.role === 'Owner' && (
+          {normalizedUserRole === 'Owner' && (
             <div className="card bg-primary text-white border-0 shadow-sm p-3">
               <p className="small text-uppercase fw-bold mb-1 opacity-75">Total Revenue</p>
               <h2 className="fw-bold mb-3">{totalRevenueFormatted}</h2>
