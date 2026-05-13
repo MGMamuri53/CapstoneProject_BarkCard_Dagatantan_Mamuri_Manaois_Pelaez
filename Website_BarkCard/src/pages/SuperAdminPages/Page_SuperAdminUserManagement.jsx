@@ -5,6 +5,7 @@ import "bootstrap/dist/js/bootstrap.bundle.min.js";
 import { toast } from "react-toastify";
 import { supabase } from "../../supabaseClient";
 import { useAuth } from "../../hooks/useAuth";
+import { waitForCardTap, extractNFCId } from "../../utils/nfcHelper";
 
 // --- Custom Styled Component Styles ---
 const GlobalStyles = () => (
@@ -118,6 +119,12 @@ export default function AdminPage_UserManagement() {
   const [showRegModal, setShowRegModal] = useState(false);
   const [canteenStores, setCanteenStores] = useState([]);
   const [selectedStoreId, setSelectedStoreId] = useState(null);
+
+  // NFC Assignment states
+  const [showNFCModal, setShowNFCModal] = useState(false);
+  const [nfcCountdown, setNfcCountdown] = useState(10);
+  const [nfcListening, setNfcListening] = useState(false);
+  const [nfcDetected, setNfcDetected] = useState(null);
 
   // Registration Form State
   const [noMiddleName, setNoMiddleName] = useState(false);
@@ -291,11 +298,6 @@ export default function AdminPage_UserManagement() {
     const newRole = String(editForm.role).trim();
     const oldRole = selectedUser.role;
     
-    console.log('=== ROLE/PROFILE UPDATE ===');
-    console.log('Updating tbl_user where uv_id =', filterId);
-    console.log('Old Role:', oldRole);
-    console.log('New Role:', newRole);
-    
     // Validate role value
     const validRoles = ['SuperAdmin', 'Owner', 'Staff', 'Student', 'Hold'];
     if (!validRoles.includes(newRole)) {
@@ -327,16 +329,11 @@ export default function AdminPage_UserManagement() {
         uv_role: newRole
       };
       
-      console.log('Update payload:', updateData);
-      
       const { data: updateResult, error } = await supabase
         .from('tbl_user')
         .update(updateData)
         .eq('uv_id', filterId)
         .select('uv_id, uv_email, uv_role');
-
-      console.log('Update Result:', updateResult);
-      console.log('Update Error:', error);
 
       if (error) {
         console.error('Supabase Error:', error.message);
@@ -352,17 +349,13 @@ export default function AdminPage_UserManagement() {
 
       // Check if update actually affected rows
       if (!updateResult || updateResult.length === 0) {
-        console.error('WARNING: No user row was updated!');
-        alert('No user row was updated. Check:\n1. uv_id filter: ' + filterId + '\n2. RLS UPDATE policy on tbl_user\n3. Row exists in database');
+        console.error('No user row was updated. User ID:', filterId);
+        toast.error('Update failed: No user row was affected');
         return;
       }
 
-      console.log('Update successful. Rows affected:', updateResult.length);
-      console.log('Updated row:', updateResult[0]);
-
       // If new role is Owner, assign store
       if (newRole === 'Owner' && selectedStoreId) {
-        console.log('Assigning store to Owner:', selectedStoreId);
         const fullName = `${editForm.firstName} ${editForm.lastName}`.trim();
         
         const { error: storeError } = await supabase
@@ -375,15 +368,12 @@ export default function AdminPage_UserManagement() {
 
         if (storeError) {
           console.error('Store assignment error:', storeError);
-          toast.error('User updated but store assignment failed: ' + storeError.message);
-        } else {
-          console.log('Store assigned successfully');
+          toast.error('User updated but store assignment failed');
         }
       }
 
       // If changing from Owner, clear store assignment
       if (oldRole === 'Owner' && newRole !== 'Owner') {
-        console.log('Clearing store assignment for former Owner');
         const { error: clearError } = await supabase
           .from('tbl_canteenstore')
           .update({
@@ -412,6 +402,91 @@ export default function AdminPage_UserManagement() {
       console.error('Error:', err);
     }
   };
+
+  const handleAssignNFC = async () => {
+    if (!selectedUser) {
+      toast.error('Please select a user first');
+      return;
+    }
+
+    setShowNFCModal(true);
+    setNfcCountdown(10);
+    setNfcListening(true);
+    setNfcDetected(null);
+
+    try {
+      // Wait for card tap (10 seconds = 10000ms)
+      const result = await waitForCardTap(10000);
+
+      if (result.success && result.card) {
+        const nfcId = extractNFCId(result.card);
+        setNfcDetected(nfcId);
+
+        // Save to database
+        const { error: updateError } = await supabase
+          .from('tbl_user')
+          .update({ uv_nfcid: nfcId })
+          .eq('uv_id', selectedUser.id);
+
+        if (updateError) {
+          console.error('Database error:', updateError);
+          toast.error(`Failed to save NFC ID: ${updateError.message}`);
+          setNfcListening(false);
+          setTimeout(() => {
+            setShowNFCModal(false);
+            setNfcDetected(null);
+          }, 2000);
+          return;
+        }
+
+        // Update local state
+        setUsers(prev =>
+          prev.map(u => u.id === selectedUser.id ? { ...u, nfcId: nfcId } : u)
+        );
+
+        toast.success(`✅ NFC ID Assigned: ${nfcId}`);
+        setNfcListening(false);
+        
+        // Close modal after 2 seconds
+        setTimeout(() => {
+          setShowNFCModal(false);
+          setNfcDetected(null);
+        }, 2000);
+      } else {
+        setNfcListening(false);
+        toast.error(result.message || 'No NFC card detected');
+        setTimeout(() => {
+          setShowNFCModal(false);
+          setNfcDetected(null);
+        }, 2000);
+      }
+    } catch (err) {
+      console.error('NFC assignment error:', err);
+      toast.error('NFC assignment failed: ' + err.message);
+      setNfcListening(false);
+      setTimeout(() => {
+        setShowNFCModal(false);
+        setNfcDetected(null);
+      }, 2000);
+    }
+  };
+
+  // Countdown timer effect
+  useEffect(() => {
+    if (!nfcListening || nfcCountdown <= 0) return;
+
+    const interval = setInterval(() => {
+      setNfcCountdown(prev => {
+        if (prev <= 1) {
+          setNfcListening(false);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [nfcListening, nfcCountdown]);
 
   const handleLogout = () => {
     logout();
@@ -580,7 +655,7 @@ export default function AdminPage_UserManagement() {
                 <div className="d-flex flex-column gap-2 mt-3 mt-lg-0">
                   <p className="small fw-bold text-uppercase text-muted mb-1" style={{fontSize: '0.7rem'}}>Operations</p>
                   <button className="xbtn xbtn-primary text-start" onClick={() => setShowRegModal(true)}>👤 New Registration</button>
-                  <button className="xbtn text-start" disabled={!selectedUser} onClick={() => toast.info("NFC assignment coming soon")}>💳 Assign NFC ID</button>
+                  <button className="xbtn text-start" disabled={!selectedUser} onClick={handleAssignNFC}>💳 Assign NFC ID</button>
                   <button className="xbtn text-start" disabled={!selectedUser} onClick={async () => {
                     setEditForm({
                       firstName: selectedUser.firstName,
@@ -823,6 +898,100 @@ export default function AdminPage_UserManagement() {
               <div className="modal-footer bg-light px-4">
                 <button type="button" className="btn btn-secondary fw-bold" onClick={() => setShowEditModal(false)}>CANCEL</button>
                 <button type="button" className="btn btn-primary fw-bold" onClick={handleEditProfile}>SAVE CHANGES</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NFC ASSIGNMENT MODAL */}
+      {showNFCModal && (
+        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content border-0 shadow">
+              <div className="modal-header" style={{ backgroundColor: '#2563eb', color: 'white' }}>
+                <h5 className="modal-title fw-bold">💳 Assign NFC Card ID</h5>
+                <button 
+                  type="button" 
+                  className="btn-close btn-close-white" 
+                  onClick={() => {
+                    setShowNFCModal(false);
+                    setNfcListening(false);
+                  }}
+                ></button>
+              </div>
+              <div className="modal-body p-4 text-center">
+                {nfcListening && !nfcDetected ? (
+                  <>
+                    <div className="mb-4">
+                      <div className="spinner-border text-primary mb-3" role="status">
+                        <span className="visually-hidden">Listening...</span>
+                      </div>
+                      <h5 className="fw-bold">Waiting for Card Tap</h5>
+                      <p className="text-muted mb-3">
+                        Please tap the NFC card near the reader
+                      </p>
+                      <div className="p-3 rounded border border-primary bg-light">
+                        <p className="mb-0">
+                          <strong className="text-primary">{nfcCountdown}</strong>
+                          <span className="text-muted"> seconds remaining</span>
+                        </p>
+                      </div>
+                    </div>
+                    <div className="alert alert-info mb-0 small">
+                      <strong>Student:</strong> {selectedUser?.lastName}, {selectedUser?.firstName}
+                    </div>
+                  </>
+                ) : nfcDetected ? (
+                  <>
+                    <div className="mb-3">
+                      <div style={{ fontSize: '3rem' }} className="mb-2">✅</div>
+                      <h5 className="fw-bold text-success">NFC ID Detected!</h5>
+                    </div>
+                    <div className="p-3 rounded border border-success bg-light mb-3">
+                      <p className="small text-muted mb-1">Card ID:</p>
+                      <p className="font-monospace fw-bold" style={{ wordBreak: 'break-all' }}>
+                        {nfcDetected}
+                      </p>
+                    </div>
+                    <div className="alert alert-success mb-0 small">
+                      <strong>Assigned to:</strong> {selectedUser?.lastName}, {selectedUser?.firstName}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="mb-3">
+                      <div style={{ fontSize: '3rem' }} className="mb-2">❌</div>
+                      <h5 className="fw-bold text-danger">No Card Detected</h5>
+                      <p className="text-muted">The 10-second timeout has expired without detecting an NFC card.</p>
+                    </div>
+                    <div className="alert alert-warning mb-0 small">
+                      Please make sure the NFC reader is connected and try again.
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="modal-footer bg-light px-4">
+                {nfcListening ? (
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary fw-bold" 
+                    onClick={() => {
+                      setShowNFCModal(false);
+                      setNfcListening(false);
+                    }}
+                  >
+                    CANCEL
+                  </button>
+                ) : (
+                  <button 
+                    type="button" 
+                    className="btn btn-primary fw-bold" 
+                    onClick={() => setShowNFCModal(false)}
+                  >
+                    CLOSE
+                  </button>
+                )}
               </div>
             </div>
           </div>
