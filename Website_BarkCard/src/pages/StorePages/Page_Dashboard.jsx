@@ -131,6 +131,7 @@ export default function Dashboard({ menuItems = [] }) {
 
         if (!authEmail) {
           console.error('[Dashboard] No email found for Owner');
+          setIsLoading(false); // Fix: Break the loading loop
           return;
         }
 
@@ -150,14 +151,19 @@ export default function Dashboard({ menuItems = [] }) {
           setStoreName(store.csv_name);
         } else {
           console.error('[Dashboard] No store found for Owner email:', authEmail);
+          setIsLoading(false); // Fix: Break the loading loop if store returns null
         }
       } catch (err) {
         console.error('[Dashboard] Error fetching Owner store:', err);
+        setIsLoading(false); // Fix: Break the loading loop on error
       }
     };
 
     if (user?.email && normalizedUserRole === 'Owner') {
       fetchOwnerStore();
+    } else {
+      // Fix: Ensure we don't load forever if the role isn't Owner
+      setIsLoading(false); 
     }
   }, [user?.email, normalizedUserRole]);
 
